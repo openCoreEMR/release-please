@@ -91,6 +91,7 @@ interface ManifestConfigArgs {
 interface ReleaseArgs {
   draft?: boolean;
   forceTag?: boolean;
+  annotatedTag?: boolean;
   prerelease?: boolean;
   releaseLabel?: string;
   snapshotLabel?: string;
@@ -236,6 +237,13 @@ function releaseOptions(yargs: yargs.Argv): yargs.Argv {
       describe:
         'mark release that have prerelease versions ' +
         'as as a prerelease on Github',
+      type: 'boolean',
+      default: false,
+    })
+    .option('annotated-tag', {
+      describe:
+        'create an annotated tag (instead of a lightweight tag) ' +
+        'when creating a release',
       type: 'boolean',
       default: false,
     })
@@ -595,6 +603,7 @@ const createReleaseCommand: yargs.CommandModule<{}, CreateReleaseArgs> = {
           packageName: argv.packageName,
           draft: argv.draft,
           forceTag: argv.forceTag,
+          annotatedTag: argv.annotatedTag,
           prerelease: argv.prerelease,
           includeComponentInTag: argv.monorepoTags,
           includeVInTag: argv.includeVInTags,
@@ -759,6 +768,7 @@ const bootstrapCommand: yargs.CommandModule<{}, BootstrapArgs> = {
       packageName: argv.packageName,
       draft: argv.draft,
       forceTag: argv.forceTag,
+      annotatedTag: argv.annotatedTag,
       prerelease: argv.prerelease,
       draftPullRequest: argv.draftPullRequest,
       bumpMinorPreMajor: argv.bumpMinorPreMajor,

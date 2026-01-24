@@ -58,6 +58,7 @@ export interface ScmReleaseOptions {
   draft?: boolean;
   prerelease?: boolean;
   forceTag?: boolean;
+  annotatedTag?: boolean;
 }
 
 export interface ScmRelease {

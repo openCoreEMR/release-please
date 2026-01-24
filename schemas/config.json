@@ -70,6 +70,10 @@
           "description": "Force the creation of a Git tag for the release. This is particularly useful when `draft` is enabled, because GitHub does not create a Git tag for draft releases until they are published. This 'lazy tag creation' causes release-please to fail to find the previous release, potentially generating incorrect changelogs. Setting this to `true` ensures the tag is created immediately. Defaults to `false`.",
           "type": "boolean"
         },
+        "annotated-tag": {
+          "description": "Create an annotated tag instead of a lightweight tag when creating a release. Annotated tags store additional metadata like the tagger and message. According to Git's documentation, release tags should be annotated. Defaults to `false` for historical and backwards compatibility reasons.",
+          "type": "boolean"
+        },
         "prerelease": {
           "description": "Create the GitHub release as prerelease. Defaults to `false`.",
           "type": "boolean"

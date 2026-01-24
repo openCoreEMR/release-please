@@ -6292,6 +6292,7 @@ describe('Manifest', () => {
         draft: true,
         prerelease: undefined,
         forceTag: undefined,
+        annotatedTag: undefined,
       } as ReleaseOptions);
       sinon.assert.calledOnce(commentStub);
       sinon.assert.calledOnceWithExactly(
@@ -6371,6 +6372,7 @@ describe('Manifest', () => {
         draft: true,
         prerelease: undefined,
         forceTag: true,
+        annotatedTag: undefined,
       } as ReleaseOptions);
       sinon.assert.calledOnce(commentStub);
       sinon.assert.calledOnceWithExactly(
@@ -6451,6 +6453,7 @@ describe('Manifest', () => {
         draft: undefined,
         prerelease: true,
         forceTag: undefined,
+        annotatedTag: undefined,
       } as ReleaseOptions);
       sinon.assert.calledOnce(commentStub);
       sinon.assert.calledOnceWithExactly(
@@ -6529,6 +6532,7 @@ describe('Manifest', () => {
         draft: undefined,
         prerelease: false,
         forceTag: undefined,
+        annotatedTag: undefined,
       } as ReleaseOptions);
       sinon.assert.calledOnce(commentStub);
       sinon.assert.calledOnceWithExactly(

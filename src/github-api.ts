@@ -664,7 +664,39 @@ export class GitHubApi {
       release: Release,
       options: ScmReleaseOptions = {}
     ): Promise<ScmRelease> => {
-      if (options.forceTag) {
+      if (options.annotatedTag) {
+        // Create an annotated tag object first, then a ref pointing to it.
+        // This differs from forceTag, which creates a lightweight tag (ref -> commit).
+        // Annotated tags store additional metadata like the tagger and message,
+        // and are required for GPG-signed release tags.
+        try {
+          const message = release.name || `Release ${release.tag.toString()}`;
+          const tagResp = await this.octokit.git.createTag({
+            owner: this.repository.owner,
+            repo: this.repository.repo,
+            tag: release.tag.toString(),
+            message,
+            object: release.sha,
+            type: 'commit',
+          });
+          await this.octokit.git.createRef({
+            owner: this.repository.owner,
+            repo: this.repository.repo,
+            ref: `refs/tags/${release.tag.toString()}`,
+            sha: tagResp.data.sha,
+          });
+          this.logger.info(`Created annotated tag ${release.tag.toString()}`);
+        } catch (err) {
+          // ignore if tag already exists
+          if ((err as RequestError).status === 422) {
+            this.logger.debug(
+              `Tag ${release.tag.toString()} already exists, skipping annotated tag creation`
+            );
+          } else {
+            throw err;
+          }
+        }
+      } else if (options.forceTag) {
         try {
           await this.octokit.git.createRef({
             owner: this.repository.owner,
