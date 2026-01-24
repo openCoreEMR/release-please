@@ -43,6 +43,7 @@ interface ErrorObject {
 
 interface GitHubArgs {
   dryRun?: boolean;
+  json?: boolean;
   trace?: boolean;
   repoUrl?: string;
   token?: string;
@@ -185,6 +186,11 @@ function gitHubOptions(yargs: yargs.Argv): yargs.Argv {
     })
     .option('dry-run', {
       describe: 'Prepare but do not take action',
+      type: 'boolean',
+      default: false,
+    })
+    .option('json', {
+      describe: 'Output machine-readable JSON (use with --dry-run)',
       type: 'boolean',
       default: false,
     })
@@ -516,35 +522,57 @@ const createReleasePullRequestCommand: yargs.CommandModule<
 
     if (argv.dryRun) {
       const pullRequests = await manifest.buildPullRequests();
-      console.log(`Would open ${pullRequests.length} pull requests`);
-      console.log('fork:', manifest.fork);
-      for (const pullRequest of pullRequests) {
-        console.log('title:', pullRequest.title.toString());
-        console.log('branch:', pullRequest.headRefName);
-        console.log('draft:', pullRequest.draft);
-        console.log('body:', pullRequest.body.toString());
-        console.log('updates:', pullRequest.updates.length);
-        const changes = await github.buildChangeSet(
-          pullRequest.updates,
-          targetBranch
+
+      if (argv.json) {
+        // Output JSON to stdout for scripting
+        const prData = pullRequests.map(pr => ({
+          title: pr.title.toString(),
+          branch: pr.headRefName,
+          draft: pr.draft,
+          body: pr.body.toString(),
+          updates: pr.updates.map(u => u.path),
+        }));
+        console.log(
+          JSON.stringify(
+            {
+              fork: manifest.fork,
+              pullRequests: prData,
+            },
+            null,
+            2
+          )
         );
-        for (const update of pullRequest.updates) {
-          console.log(
-            `  ${update.path}: `,
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            (update.updater as any).constructor
+      } else {
+        console.log(`Would open ${pullRequests.length} pull requests`);
+        console.log('fork:', manifest.fork);
+        for (const pullRequest of pullRequests) {
+          console.log('title:', pullRequest.title.toString());
+          console.log('branch:', pullRequest.headRefName);
+          console.log('draft:', pullRequest.draft);
+          console.log('body:', pullRequest.body.toString());
+          console.log('updates:', pullRequest.updates.length);
+          const changes = await github.buildChangeSet(
+            pullRequest.updates,
+            targetBranch
           );
-          if (argv.trace) {
-            const change = changes.get(update.path);
-            if (change) {
-              const patch = createPatch(
-                update.path,
-                change.originalContent || '',
-                change.content || ''
-              );
-              console.log(patch);
-            } else {
-              console.warn(`no change found for ${update.path}`);
+          for (const update of pullRequest.updates) {
+            console.log(
+              `  ${update.path}: `,
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              (update.updater as any).constructor
+            );
+            if (argv.trace) {
+              const change = changes.get(update.path);
+              if (change) {
+                const patch = createPatch(
+                  update.path,
+                  change.originalContent || '',
+                  change.content || ''
+                );
+                console.log(patch);
+              } else {
+                console.warn(`no change found for ${update.path}`);
+              }
             }
           }
         }
@@ -604,17 +632,26 @@ const createReleaseCommand: yargs.CommandModule<{}, CreateReleaseArgs> = {
 
     if (argv.dryRun) {
       const releases = await manifest.buildReleases();
-      logger.info(`Would tag ${releases.length} releases:`);
-      for (const release of releases) {
-        logger.info({
-          name: release.name,
-          tag: release.tag.toString(),
-          notes: release.notes,
-          sha: release.sha,
-          draft: release.draft,
-          prerelease: release.prerelease,
-          pullNumber: release.pullRequest.number,
-        });
+      const releaseData = releases.map(release => ({
+        name: release.name,
+        tag: release.tag.toString(),
+        version: release.tag.version.toString(),
+        notes: release.notes,
+        sha: release.sha,
+        path: release.path,
+        draft: release.draft,
+        prerelease: release.prerelease,
+        pullNumber: release.pullRequest.number,
+      }));
+
+      if (argv.json) {
+        // Output JSON to stdout for scripting
+        console.log(JSON.stringify(releaseData, null, 2));
+      } else {
+        logger.info(`Would tag ${releases.length} releases:`);
+        for (const data of releaseData) {
+          logger.info(data);
+        }
       }
     } else {
       const releaseNumbers = await manifest.createReleases();
