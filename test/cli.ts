@@ -1281,6 +1281,60 @@ describe('CLI', () => {
         sinon.assert.calledOnce(buildReleasesStub);
       });
 
+      it('handles --dry-run --json for machine-readable output', async () => {
+        const mockPullRequest = {
+          headBranchName: 'release-please--branches--main',
+          baseBranchName: 'main',
+          number: 123,
+          title: 'chore(main): release 1.2.3',
+          body: 'Release notes',
+          labels: [],
+          files: [],
+        };
+        const buildReleasesStub = sandbox
+          .stub(fakeManifest, 'buildReleases')
+          .resolves([
+            {
+              name: 'v1.2.3',
+              tag: {
+                toString: () => 'v1.2.3',
+                version: {toString: () => '1.2.3'},
+              },
+              notes: 'Release notes',
+              sha: 'abc123',
+              path: '.',
+              draft: false,
+              prerelease: false,
+              pullRequest: mockPullRequest,
+            } as any,
+          ]);
+
+        let consoleOutput = '';
+        const originalLog = console.log;
+        console.log = (msg: string) => {
+          consoleOutput += msg;
+        };
+
+        try {
+          await parser.parseAsync(
+            'github-release --repo-url=googleapis/release-please-cli --dry-run --json'
+          );
+        } finally {
+          console.log = originalLog;
+        }
+
+        sinon.assert.calledOnce(buildReleasesStub);
+
+        // Verify output is valid JSON
+        const parsed = JSON.parse(consoleOutput);
+        expect(parsed).to.be.an('array');
+        expect(parsed).to.have.lengthOf(1);
+        expect(parsed[0].tag).to.equal('v1.2.3');
+        expect(parsed[0].version).to.equal('1.2.3');
+        expect(parsed[0].sha).to.equal('abc123');
+        expect(parsed[0].pullNumber).to.equal(123);
+      });
+
       it('handles --label and --release-label', async () => {
         await parser.parseAsync(
           'github-release --repo-url=googleapis/release-please-cli --label=foo,bar --release-label=asdf,qwer'
