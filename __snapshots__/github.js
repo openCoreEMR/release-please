@@ -515,6 +515,24 @@ exports['GitHub createRelease should create a release with a package prefix 1'] 
   "target_commitish": "abc123"
 }
 
+exports['GitHub createRelease should create a release with annotated tag (tag already exists) 1'] = {
+  "name": "Release v1.2.3",
+  "tag_name": "v1.2.3",
+  "body": "Some release notes",
+  "draft": false,
+  "prerelease": false,
+  "target_commitish": "abc123"
+}
+
+exports['GitHub createRelease should create a release with annotated tag 1'] = {
+  "name": "Release v1.2.3",
+  "tag_name": "v1.2.3",
+  "body": "Some release notes",
+  "draft": false,
+  "prerelease": false,
+  "target_commitish": "abc123"
+}
+
 exports['GitHub createRelease should raise a DuplicateReleaseError if already_exists 1'] = {
   "tag_name": "v1.2.3",
   "body": "Some release notes",

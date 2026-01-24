@@ -174,6 +174,7 @@ export interface ReleaseOptions {
   draft?: boolean;
   prerelease?: boolean;
   forceTag?: boolean;
+  annotatedTag?: boolean;
 }
 
 export interface GitHubRelease {
@@ -1392,19 +1393,54 @@ export class GitHub {
       release: Release,
       options: ReleaseOptions = {}
     ): Promise<GitHubRelease> => {
-      if (options.forceTag) {
+      const owner = this.repository.owner;
+      const repo = this.repository.repo;
+      const tagName = release.tag.toString();
+
+      if (options.annotatedTag) {
+        // Create an annotated tag object first, then a ref pointing to it.
+        // This differs from forceTag which creates a lightweight tag (ref -> commit).
+        // Annotated tags store additional metadata like the tagger and message.
+        try {
+          const message = release.name || `Release ${tagName}`;
+          const tagResp = await this.octokit.git.createTag({
+            owner,
+            repo,
+            tag: tagName,
+            message,
+            object: release.sha,
+            type: 'commit',
+          });
+          await this.octokit.git.createRef({
+            owner,
+            repo,
+            ref: `refs/tags/${tagName}`,
+            sha: tagResp.data.sha,
+          });
+          this.logger.info(`Created annotated tag ${tagName}`);
+        } catch (err) {
+          // ignore if tag already exists
+          if ((err as RequestError).status === 422) {
+            this.logger.debug(
+              `Tag ${tagName} already exists, skipping annotated tag creation`
+            );
+          } else {
+            throw err;
+          }
+        }
+      } else if (options.forceTag) {
         try {
           await this.octokit.git.createRef({
-            owner: this.repository.owner,
-            repo: this.repository.repo,
-            ref: `refs/tags/${release.tag.toString()}`,
+            owner,
+            repo,
+            ref: `refs/tags/${tagName}`,
             sha: release.sha,
           });
         } catch (err) {
           // ignore if tag already exists
           if ((err as RequestError).status === 422) {
             this.logger.debug(
-              `Tag ${release.tag.toString()} already exists, skipping tag creation`
+              `Tag ${tagName} already exists, skipping tag creation`
             );
           } else {
             throw err;
@@ -1413,9 +1449,9 @@ export class GitHub {
       }
       const resp = await this.octokit.repos.createRelease({
         name: release.name,
-        owner: this.repository.owner,
-        repo: this.repository.repo,
-        tag_name: release.tag.toString(),
+        owner,
+        repo,
+        tag_name: tagName,
         body: release.notes,
         draft: !!options.draft,
         prerelease: !!options.prerelease,
