@@ -15,6 +15,7 @@
 import {describe, it} from 'mocha';
 import {expect} from 'chai';
 import {TagName} from '../../src/util/tag-name';
+import {Version} from '../../src/version';
 
 describe('TagName', () => {
   describe('parse', () => {
@@ -110,6 +111,43 @@ describe('TagName', () => {
         expect(tagName?.version.toString()).to.eql('178.2.3');
         expect(tagName?.separator).to.eql('-');
         expect(tagName?.toString()).to.eql(name);
+      });
+    });
+    describe('openemr-internal format', () => {
+      it('parses oce-800-r3', () => {
+        const tagName = TagName.parse('oce-800-r3');
+        expect(tagName).to.not.be.undefined;
+        expect(tagName?.component).to.eql('oce-800');
+        expect(tagName?.version.major).to.eql(0);
+        expect(tagName?.version.minor).to.eql(0);
+        expect(tagName?.version.patch).to.eql(3);
+        expect(tagName?.oceFormat).to.eql(true);
+      });
+      it('round-trips', () => {
+        const name = 'oce-800-r11';
+        expect(TagName.parse(name)?.toString()).to.eql(name);
+      });
+      it('round-trips a different rel branch', () => {
+        const name = 'oce-810-r1';
+        expect(TagName.parse(name)?.toString()).to.eql(name);
+      });
+      it('renders from constructed TagName with oceFormat flag', () => {
+        const tag = new TagName(
+          new Version(0, 0, 7),
+          'oce-800',
+          '-r',
+          false,
+          true
+        );
+        expect(tag.toString()).to.eql('oce-800-r7');
+      });
+      it('does not match a semver tag with the oce fallback', () => {
+        // Existing semver tags must continue to be parsed by the primary
+        // pattern, not the oce fallback. The oce fallback is only reached
+        // when the semver pattern fails to match.
+        const tagName = TagName.parse('some-component-v1.2.3');
+        expect(tagName?.oceFormat).to.eql(false);
+        expect(tagName?.version.toString()).to.eql('1.2.3');
       });
     });
   });

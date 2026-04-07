@@ -33,6 +33,7 @@ import {KRMBlueprint} from './strategies/krm-blueprint';
 import {Maven} from './strategies/maven';
 import {Node} from './strategies/node';
 import {OCaml} from './strategies/ocaml';
+import {OpenemrInternal} from './strategies/openemr-internal';
 import {PHP} from './strategies/php';
 import {PHPYoshi} from './strategies/php-yoshi';
 import {Python} from './strategies/python';
@@ -96,6 +97,7 @@ const releasers: Record<string, ReleaseBuilder> = {
   node: options => new Node(options),
   expo: options => new Expo(options),
   ocaml: options => new OCaml(options),
+  'openemr-internal': options => new OpenemrInternal(options),
   php: options => new PHP(options),
   'php-yoshi': options => new PHPYoshi(options),
   python: options => new Python(options),

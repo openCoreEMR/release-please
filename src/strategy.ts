@@ -19,6 +19,7 @@ import {Commit} from './commit';
 import {VersioningStrategy} from './versioning-strategy';
 import {ChangelogNotes} from './changelog-notes';
 import {Version} from './version';
+import {TagName} from './util/tag-name';
 
 export interface BuildReleaseOptions {
   groupPullRequestTitlePattern?: string;
@@ -92,6 +93,12 @@ export interface Strategy {
    * @returns {string}
    */
   getBranchComponent(): Promise<string | undefined>;
+
+  /**
+   * Build the TagName for a given version and component. Strategies
+   * may customize this to produce non-semver tag formats.
+   */
+  buildTagName(version: Version, component: string | undefined): TagName;
 
   /**
    * Validate whether version is a valid release.

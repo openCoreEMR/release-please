@@ -719,12 +719,7 @@ export class Manifest {
           `No latest release found for path: ${path}, component: ${component}, but a previous version (${version.toString()}) was specified in the manifest.`
         );
         releasesByPath[path] = {
-          tag: new TagName(
-            version,
-            component,
-            this.repositoryConfig[path].tagSeparator,
-            this.repositoryConfig[path].includeVInTag
-          ),
+          tag: strategy.buildTagName(version, component),
           sha: '',
           notes: '',
         };
@@ -860,11 +855,9 @@ export class Manifest {
         continue;
       }
       const component = await strategiesByPath[path].getComponent();
-      const expectedTag = new TagName(
+      const expectedTag = strategiesByPath[path].buildTagName(
         expectedVersion,
-        component,
-        this.repositoryConfig[path].tagSeparator,
-        this.repositoryConfig[path].includeVInTag
+        component
       );
       this.logger.debug(`looking for tagName: ${expectedTag.toString()}`);
       const foundTag = allTags[expectedTag.toString()];
@@ -882,14 +875,11 @@ export class Manifest {
           this.repositoryConfig[path].skipGithubRelease
         ) {
           this.logger.debug('could not find release, checking root package');
-          const rootComponent = await strategiesByPath[
-            ROOT_PROJECT_PATH
-          ].getComponent();
-          const rootTag = new TagName(
+          const rootStrategy = strategiesByPath[ROOT_PROJECT_PATH];
+          const rootComponent = await rootStrategy.getComponent();
+          const rootTag = rootStrategy.buildTagName(
             expectedVersion,
-            rootComponent,
-            this.repositoryConfig[ROOT_PROJECT_PATH].tagSeparator,
-            this.repositoryConfig[ROOT_PROJECT_PATH].includeVInTag
+            rootComponent
           );
           const foundTag = allTags[rootTag.toString()];
           if (foundTag) {

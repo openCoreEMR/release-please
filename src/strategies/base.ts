@@ -208,6 +208,38 @@ export abstract class BaseStrategy implements Strategy {
   }
 
   /**
+   * Build the TagName for a given version and component. Subclasses
+   * may override to customize tag formatting (e.g. the openemr-internal
+   * strategy renders tags like "oce-800-r3" instead of semver).
+   *
+   * Existing semver behavior is preserved by the default implementation.
+   */
+  buildTagName(version: Version, component: string | undefined): TagName {
+    return new TagName(
+      version,
+      this.includeComponentInTag ? component : undefined,
+      this.tagSeparator,
+      this.includeVInTag
+    );
+  }
+
+  /**
+   * Build the GitHub release name for a given tag/component/version.
+   * Subclasses may override to render the release name differently
+   * (e.g. mirror the tag name verbatim).
+   */
+  protected buildReleaseName(
+    _tag: TagName,
+    component: string | undefined,
+    version: Version
+  ): string {
+    const versionPrefix = this.includeVInReleaseName ? 'v' : '';
+    return component && this.includeComponentInTag
+      ? `${component}: ${versionPrefix}${version.toString()}`
+      : `${versionPrefix}${version.toString()}`;
+  }
+
+  /**
    * Override this method to post process commits
    * @param {ConventionalCommit[]} commits parsed commits
    * @returns {ConventionalCommit[]} modified commits
@@ -299,12 +331,7 @@ export abstract class BaseStrategy implements Strategy {
     const component = await this.getComponent();
     this.logger.debug('component:', component);
 
-    const newVersionTag = new TagName(
-      newVersion,
-      this.includeComponentInTag ? component : undefined,
-      this.tagSeparator,
-      this.includeVInTag
-    );
+    const newVersionTag = this.buildTagName(newVersion, component);
     this.logger.debug(
       'pull request title pattern:',
       this.pullRequestTitlePattern
@@ -699,17 +726,8 @@ export abstract class BaseStrategy implements Strategy {
       return;
     }
 
-    const tag = new TagName(
-      version,
-      this.includeComponentInTag ? component : undefined,
-      this.tagSeparator,
-      this.includeVInTag
-    );
-    const versionPrefix = this.includeVInReleaseName ? 'v' : '';
-    const releaseName =
-      component && this.includeComponentInTag
-        ? `${component}: ${versionPrefix}${version.toString()}`
-        : `${versionPrefix}${version.toString()}`;
+    const tag = this.buildTagName(version, component);
+    const releaseName = this.buildReleaseName(tag, component, version);
     return {
       name: releaseName,
       tag,
