@@ -31,6 +31,8 @@ Options:
                                 a temporary directory.                  [string]
   --local-clone-depth           Depth of local clone. Defaults to the entire
                                 repo.                                   [number]
+  --json                        Output machine-readable JSON (use with
+                                --dry-run)            [boolean] [default: false]
   --include-v-in-tags           include "v" in tag versions
                                                        [boolean] [default: true]
   --monorepo-tags               include library name in tags and release
@@ -68,6 +70,9 @@ Options:
                                                       [boolean] [default: false]
   --prerelease                  mark release that have prerelease versions as as
                                 a prerelease on Github[boolean] [default: false]
+  --annotated-tag               create an annotated tag (instead of a
+                                lightweight tag) when creating a release
+                                                      [boolean] [default: false]
   --label                       comma-separated list of labels to remove to from
                                 release PR     [default: "autorelease: pending"]
   --release-label               set a pull request label other than
@@ -108,6 +113,8 @@ Options:
                         temporary directory.                            [string]
   --local-clone-depth   Depth of local clone. Defaults to the entire repo.
                                                                         [number]
+  --json                Output machine-readable JSON (use with --dry-run)
+                                                      [boolean] [default: false]
   --label               comma-separated list of labels to add to from release PR
                                                [default: "autorelease: pending"]
   --skip-labeling       skip application of labels to pull requests
@@ -154,6 +161,8 @@ Options:
                         temporary directory.                            [string]
   --local-clone-depth   Depth of local clone. Defaults to the entire repo.
                                                                         [number]
+  --json                Output machine-readable JSON (use with --dry-run)
+                                                      [boolean] [default: false]
   --draft               mark release as a draft. no tag is created but tag_name
                         and target_commitish are associated with the release for
                         future tag creation upon "un-drafting" the release.
@@ -162,6 +171,8 @@ Options:
                                                       [boolean] [default: false]
   --prerelease          mark release that have prerelease versions as as a
                         prerelease on Github          [boolean] [default: false]
+  --annotated-tag       create an annotated tag (instead of a lightweight tag)
+                        when creating a release       [boolean] [default: false]
   --label               comma-separated list of labels to remove to from release
                         PR                     [default: "autorelease: pending"]
   --release-label       set a pull request label other than "autorelease:
@@ -209,6 +220,8 @@ Options:
                                     uses a temporary directory.         [string]
   --local-clone-depth               Depth of local clone. Defaults to the entire
                                     repo.                               [number]
+  --json                            Output machine-readable JSON (use with
+                                    --dry-run)        [boolean] [default: false]
   --release-as                      override the semantically determined release
                                     version                             [string]
   --bump-minor-pre-major            should we bump the semver minor prior to the
