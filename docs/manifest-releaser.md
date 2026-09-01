@@ -218,7 +218,14 @@ defaults (those are documented in comments)
   // true ensures the tag is created immediately, allowing release-please to
   // correctly identify the previous release.
   // Absence defaults to false.
-  "force-tag-creation": true
+  "force-tag-creation": true,
+
+  // Create an annotated tag (a tag object carrying a tagger and message)
+  // rather than a lightweight tag pointing straight at the commit. Git's
+  // own documentation says release tags should be annotated, and the
+  // GitHub Releases API only ever creates lightweight tags, so this
+  // defaults to true. Set it to false to opt back out.
+  "annotated-tag": false
 
   // Skip creating GitHub Releases
   // Absence defaults to false and Releases will be created. Release-Please still

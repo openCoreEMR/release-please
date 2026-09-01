@@ -1775,7 +1775,10 @@ function mergeReleaserConfig(
     skipChangelog: pathConfig.skipChangelog ?? defaultConfig.skipChangelog,
     draft: pathConfig.draft ?? defaultConfig.draft,
     forceTag: pathConfig.forceTag ?? defaultConfig.forceTag,
-    annotatedTag: pathConfig.annotatedTag ?? defaultConfig.annotatedTag,
+    // Annotated tags are the default: Git's own documentation says release
+    // tags should be annotated, and the GitHub Releases API only ever
+    // creates a lightweight tag. Opt out with `"annotated-tag": false`.
+    annotatedTag: pathConfig.annotatedTag ?? defaultConfig.annotatedTag ?? true,
     draftPullRequest:
       pathConfig.draftPullRequest ?? defaultConfig.draftPullRequest,
     prerelease: pathConfig.prerelease ?? defaultConfig.prerelease,

@@ -251,7 +251,7 @@ function releaseOptions(yargs: yargs.Argv): yargs.Argv {
         'create an annotated tag (instead of a lightweight tag) ' +
         'when creating a release',
       type: 'boolean',
-      default: false,
+      default: true,
     })
     .option('label', {
       default: 'autorelease: pending',
