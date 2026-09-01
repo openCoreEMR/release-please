@@ -87,11 +87,13 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
-          repository: googleapis/release-please-action
+          repository: openCoreEMR/release-please-action
           ref: main
           persist-credentials: false
       - uses: actions/setup-node@3235b876344d2a9aa001b8d1453c930bba69e610 # v3
         with:
           node-version: 22
-      - run: npm install --save googleapis/release-please#${GITHUB_REF}
+      - run: npm install --save "${LIB_REPO}#${GITHUB_REF}"
+        env:
+          LIB_REPO: ${{ github.repository }}
       - run: npm run build
