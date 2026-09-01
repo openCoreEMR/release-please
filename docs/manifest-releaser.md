@@ -225,7 +225,7 @@ defaults (those are documented in comments)
   // own documentation says release tags should be annotated, and the
   // GitHub Releases API only ever creates lightweight tags, so this
   // defaults to true. Set it to false to opt back out.
-  "annotated-tag": false
+  "annotated-tag": false,
 
   // Skip creating GitHub Releases
   // Absence defaults to false and Releases will be created. Release-Please still
