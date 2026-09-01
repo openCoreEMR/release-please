@@ -71,7 +71,7 @@
           "type": "boolean"
         },
         "annotated-tag": {
-          "description": "Create an annotated tag instead of a lightweight tag when creating a release. Annotated tags store additional metadata like the tagger and message. According to Git's documentation, release tags should be annotated. Defaults to `false` for historical and backwards compatibility reasons.",
+          "description": "Create an annotated tag instead of a lightweight tag when creating a release. Annotated tags store additional metadata like the tagger and message. According to Git's documentation, release tags should be annotated. Defaults to `true`; set to `false` to fall back to the lightweight tag the GitHub Releases API creates.",
           "type": "boolean"
         },
         "prerelease": {
@@ -482,6 +482,7 @@
     "skip-changelog": true,
     "draft": true,
     "force-tag-creation": true,
+    "annotated-tag": true,
     "prerelease": true,
     "draft-pull-request": true,
     "label": true,

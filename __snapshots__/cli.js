@@ -72,7 +72,7 @@ Options:
                                 a prerelease on Github[boolean] [default: false]
   --annotated-tag               create an annotated tag (instead of a
                                 lightweight tag) when creating a release
-                                                      [boolean] [default: false]
+                                                       [boolean] [default: true]
   --label                       comma-separated list of labels to remove to from
                                 release PR     [default: "autorelease: pending"]
   --release-label               set a pull request label other than
@@ -172,7 +172,7 @@ Options:
   --prerelease          mark release that have prerelease versions as as a
                         prerelease on Github          [boolean] [default: false]
   --annotated-tag       create an annotated tag (instead of a lightweight tag)
-                        when creating a release       [boolean] [default: false]
+                        when creating a release        [boolean] [default: true]
   --label               comma-separated list of labels to remove to from release
                         PR                     [default: "autorelease: pending"]
   --release-label       set a pull request label other than "autorelease:

@@ -1007,6 +1007,39 @@ describe('GitHub', () => {
       expect(release.tagName).to.eql('v1.2.3');
     });
 
+    it('should create a lightweight tag when annotated tag is disabled', async () => {
+      // No /git/tags interceptor is registered, so nock fails the test if the
+      // annotated-tag path runs. The GitHub Releases API creates the
+      // lightweight tag on its own.
+      req
+        .post('/repos/fake/fake/releases', body => {
+          expect(body.tag_name).to.eql('v1.2.3');
+          return true;
+        })
+        .reply(200, {
+          id: 123456,
+          tag_name: 'v1.2.3',
+          draft: false,
+          html_url: 'https://github.com/fake/fake/releases/v1.2.3',
+          upload_url:
+            'https://uploads.github.com/repos/fake/fake/releases/1/assets{?name,label}',
+          target_commitish: 'abc123',
+        });
+      const release = await github.createRelease(
+        {
+          tag: new TagName(Version.parse('1.2.3')),
+          sha: 'abc123',
+          notes: 'Some release notes',
+          name: 'Release v1.2.3',
+        },
+        {annotatedTag: false}
+      );
+      req.done();
+      expect(release).to.not.be.undefined;
+      expect(release.tagName).to.eql('v1.2.3');
+      expect(release.sha).to.eql('abc123');
+    });
+
     it('should create a prerelease release', async () => {
       req
         .post('/repos/fake/fake/releases', body => {
