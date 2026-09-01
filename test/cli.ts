@@ -1436,6 +1436,38 @@ describe('CLI', () => {
         sinon.assert.calledOnce(createReleasesStub);
       });
 
+      it('defaults annotated tags to on', async () => {
+        await parser.parseAsync(
+          'github-release --repo-url=googleapis/release-please-cli --release-type=java-yoshi'
+        );
+
+        sinon.assert.calledOnceWithExactly(
+          fromConfigStub,
+          fakeGitHub,
+          'main',
+          sinon.match({annotatedTag: true}),
+          sinon.match.any,
+          undefined
+        );
+        sinon.assert.calledOnce(createReleasesStub);
+      });
+
+      it('handles --no-annotated-tag', async () => {
+        await parser.parseAsync(
+          'github-release --repo-url=googleapis/release-please-cli --release-type=java-yoshi --no-annotated-tag'
+        );
+
+        sinon.assert.calledOnceWithExactly(
+          fromConfigStub,
+          fakeGitHub,
+          'main',
+          sinon.match({annotatedTag: false}),
+          sinon.match.any,
+          undefined
+        );
+        sinon.assert.calledOnce(createReleasesStub);
+      });
+
       it('handles --dry-run', async () => {
         const buildReleasesStub = sandbox
           .stub(fakeManifest, 'buildReleases')
