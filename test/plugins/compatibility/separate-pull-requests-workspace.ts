@@ -222,11 +222,18 @@ describe('Plugin compatibility', () => {
       ).updater as Changelog;
       expect(updaterC.version.toString()).to.eql('1.1.0');
       expect(pullRequest3.labels).to.eql(['autorelease: pending']);
-      assertHasUpdate(
-        pullRequest3.updates,
-        '.release-please-manifest.json',
-        ReleasePleaseManifest
-      );
+      // the real release must not pick up the forced bumps' entries, whatever
+      // order the candidates come in
+      const manifestUpdaterC = (
+        assertHasUpdate(
+          pullRequest3.updates,
+          '.release-please-manifest.json',
+          ReleasePleaseManifest
+        ) as Update
+      ).updater as ReleasePleaseManifest;
+      expect([...manifestUpdaterC.versionsMap!.keys()]).to.eql([
+        'packages/node3',
+      ]);
     });
   });
 });

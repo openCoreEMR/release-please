@@ -197,12 +197,23 @@ export abstract class WorkspacePlugin<T> extends ManifestPlugin {
       // manifest entry for its own path — attaching every entry to the first
       // candidate would strand the other versions when pull requests are
       // merged independently. Candidates built from real releases already
-      // received their manifest entry from the manifest pull request builder;
-      // only forced version bumps (dependency-only updates) are in
-      // updatedPathVersions and handled here.
+      // received their manifest entry from the manifest pull request builder,
+      // and some plugins (maven-workspace) list them in updatedPathVersions
+      // too, so only candidates without an entry get one here.
+      const candidatePaths = new Set(newCandidates.map(c => c.path));
+      for (const path of updatedPathVersions.keys()) {
+        if (!candidatePaths.has(path)) {
+          this.logger.debug(
+            `No candidate pull request for bumped path: ${path}`
+          );
+        }
+      }
       for (const candidate of newCandidates) {
         const version = updatedPathVersions.get(candidate.path);
-        if (version) {
+        const hasManifestUpdate = candidate.pullRequest.updates.some(
+          update => update.path === this.manifestPath
+        );
+        if (version && !hasManifestUpdate) {
           candidate.pullRequest.updates.push({
             path: this.manifestPath,
             createIfMissing: false,
