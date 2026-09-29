@@ -36,6 +36,7 @@ export interface WorkspacePluginOptions {
   updateAllPackages?: boolean;
   merge?: boolean;
   logger?: Logger;
+  labels?: string[];
 }
 
 export interface AllPackages<T> {
@@ -58,6 +59,7 @@ export abstract class WorkspacePlugin<T> extends ManifestPlugin {
   private updateAllPackages: boolean;
   private manifestPath: string;
   private merge: boolean;
+  protected labels: string[];
   constructor(
     github: Scm,
     targetBranch: string,
@@ -68,6 +70,7 @@ export abstract class WorkspacePlugin<T> extends ManifestPlugin {
     this.manifestPath = options.manifestPath ?? DEFAULT_RELEASE_PLEASE_MANIFEST;
     this.updateAllPackages = options.updateAllPackages ?? false;
     this.merge = options.merge ?? true;
+    this.labels = options.labels ?? [];
   }
   async run(
     candidates: CandidateReleasePullRequest[]
@@ -176,15 +179,52 @@ export abstract class WorkspacePlugin<T> extends ManifestPlugin {
       newCandidates = await mergePlugin.run(newCandidates);
     }
 
-    const newUpdates = newCandidates[0].pullRequest.updates;
-    newUpdates.push({
-      path: this.manifestPath,
-      createIfMissing: false,
-      updater: new ReleasePleaseManifest({
-        version: newCandidates[0].pullRequest.version!,
-        versionsMap: updatedPathVersions,
-      }),
-    });
+    if (this.merge) {
+      // All in-scope candidates have been merged into a single pull request,
+      // so a single update covering every bumped path is attached to it.
+      const newUpdates = newCandidates[0].pullRequest.updates;
+      newUpdates.push({
+        path: this.manifestPath,
+        createIfMissing: false,
+        updater: new ReleasePleaseManifest({
+          version: newCandidates[0].pullRequest.version!,
+          versionsMap: updatedPathVersions,
+        }),
+      });
+    } else {
+      // Candidates are kept as separate pull requests (e.g. with
+      // `separate-pull-requests: true`), so each pull request must carry the
+      // manifest entry for its own path — attaching every entry to the first
+      // candidate would strand the other versions when pull requests are
+      // merged independently. Candidates built from real releases already
+      // received their manifest entry from the manifest pull request builder,
+      // and some plugins (maven-workspace) list them in updatedPathVersions
+      // too, so only candidates without an entry get one here.
+      const candidatePaths = new Set(newCandidates.map(c => c.path));
+      for (const path of updatedPathVersions.keys()) {
+        if (!candidatePaths.has(path)) {
+          this.logger.debug(
+            `No candidate pull request for bumped path: ${path}`
+          );
+        }
+      }
+      for (const candidate of newCandidates) {
+        const version = updatedPathVersions.get(candidate.path);
+        const hasManifestUpdate = candidate.pullRequest.updates.some(
+          update => update.path === this.manifestPath
+        );
+        if (version && !hasManifestUpdate) {
+          candidate.pullRequest.updates.push({
+            path: this.manifestPath,
+            createIfMissing: false,
+            updater: new ReleasePleaseManifest({
+              version: candidate.pullRequest.version!,
+              versionsMap: new Map([[candidate.path, version]]),
+            }),
+          });
+        }
+      }
+    }
 
     this.logger.info(
       `Post-processing ${newCandidates.length} in-scope candidates`

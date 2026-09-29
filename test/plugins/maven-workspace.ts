@@ -246,6 +246,72 @@ describe('MavenWorkspace plugin', () => {
       safeSnapshot(newCandidates[0].pullRequest.body.toString());
       expect(newCandidates[0].pullRequest.body.releaseData).length(4);
     });
+    it('gives each separate pull request one manifest entry for its own path', async () => {
+      plugin = new MavenWorkspace(
+        github,
+        'main',
+        {
+          bom: {releaseType: 'maven'},
+          maven1: {releaseType: 'maven'},
+          maven2: {releaseType: 'maven'},
+          maven3: {releaseType: 'maven'},
+          maven4: {releaseType: 'maven'},
+        },
+        {merge: false}
+      );
+      const candidates: CandidateReleasePullRequest[] = [
+        buildMockCandidatePullRequest('maven1', 'maven', '1.1.2', {
+          component: 'maven1',
+          updates: [
+            buildMockPackageUpdate('maven1/pom.xml', 'maven1/pom.xml', '1.1.2'),
+            // the manifest pull request builder attaches this to every
+            // candidate built from a real release
+            {
+              path: '.release-please-manifest.json',
+              createIfMissing: false,
+              updater: new ReleasePleaseManifest({
+                version: Version.parse('1.1.2'),
+                versionsMap: new Map([['maven1', Version.parse('1.1.2')]]),
+              }),
+            },
+          ],
+        }),
+      ];
+      stubFilesFromFixtures({
+        sandbox,
+        github,
+        fixturePath: fixturesPath,
+        files: [
+          'maven1/pom.xml',
+          'maven2/pom.xml',
+          'maven3/pom.xml',
+          'maven4/pom.xml',
+        ],
+        flatten: false,
+        targetBranch: 'main',
+      });
+      sandbox
+        .stub(github, 'findFilesByFilenameAndRef')
+        .withArgs('pom.xml', 'main')
+        .resolves([
+          'maven1/pom.xml',
+          'maven2/pom.xml',
+          'maven3/pom.xml',
+          'maven4/pom.xml',
+        ]);
+      const newCandidates = await plugin.run(candidates);
+      expect(newCandidates.length).to.be.greaterThan(1);
+      for (const candidate of newCandidates) {
+        const manifestUpdates = candidate.pullRequest.updates.filter(
+          update => update.path === '.release-please-manifest.json'
+        );
+        expect(manifestUpdates, candidate.path).length(1);
+        const updater = manifestUpdates[0].updater as ReleasePleaseManifest;
+        expect([...updater.versionsMap!.keys()], candidate.path).to.eql([
+          candidate.path,
+        ]);
+      }
+    });
     it('skips pom files not configured for release', async () => {
       plugin = new MavenWorkspace(
         github,
