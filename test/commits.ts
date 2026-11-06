@@ -366,6 +366,35 @@ describe('parseConventionalCommits', () => {
     });
   });
 
+  it('handles nested parentheses in a CRLF commit body', async () => {
+    const commits = [
+      buildMockCommit(
+        'fix: some fix\r\n\r\nFoo.Bar(baz(abc))\r\nMore details.'
+      ),
+    ];
+    const conventionalCommits = parseConventionalCommits(commits);
+    expect(conventionalCommits).lengthOf(1);
+    expect(conventionalCommits[0].type).to.equal('fix');
+    expect(conventionalCommits[0].bareMessage).to.equal('some fix');
+  });
+
+  it('handles nested parentheses in the body of a nested commit', async () => {
+    const commits = [
+      buildMockCommit(
+        'feat: outer change\n\n' +
+          'BEGIN_NESTED_COMMIT\n' +
+          'fix(core): nested fix\n\n' +
+          'Foo.Bar(baz(abc))\n' +
+          'END_NESTED_COMMIT'
+      ),
+    ];
+    const conventionalCommits = parseConventionalCommits(commits);
+    expect(conventionalCommits).lengthOf(2);
+    expect(conventionalCommits[1].type).to.equal('fix');
+    expect(conventionalCommits[1].scope).to.equal('core');
+    expect(conventionalCommits[1].bareMessage).to.equal('nested fix');
+  });
+
   it('handles nested parentheses after a non-ASCII space in the commit body', async () => {
     // The parser treats only U+FEFF, tab, VT, FF, space and NBSP as
     // whitespace, so an em space does not end the footer token.

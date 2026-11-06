@@ -3611,8 +3611,13 @@ describe('Manifest', () => {
       );
       const pullRequests = await manifest.buildPullRequests();
       expect(pullRequests).not.empty;
-      expect(pullRequests[0].body.toString()).to.include('@foo');
-      expect(pullRequests[0].body.toString()).to.include('@bar');
+      const notes = pullRequests[0].body.toString();
+      expect(notes).to.include(
+        '* Some bugfix ([@foo](https://github.com/foo)) ([def456]'
+      );
+      expect(notes).to.include(
+        '* Added thing ([@bar](https://github.com/bar)) ([deadbee]'
+      );
       sinon.assert.calledOnceWithMatch(
         commitsStub,
         'main',
