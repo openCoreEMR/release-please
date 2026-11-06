@@ -378,6 +378,13 @@ describe('parseConventionalCommits', () => {
     expect(conventionalCommits[0].bareMessage).to.equal('some fix');
   });
 
+  it('handles an unterminated scope ended by a bare CR in the commit body', async () => {
+    const commits = [buildMockCommit('fix: some fix\n\nfoo(bar\rbaz')];
+    const conventionalCommits = parseConventionalCommits(commits);
+    expect(conventionalCommits).lengthOf(1);
+    expect(conventionalCommits[0].bareMessage).to.equal('some fix');
+  });
+
   it('handles nested parentheses in the body of a nested commit', async () => {
     const commits = [
       buildMockCommit(
