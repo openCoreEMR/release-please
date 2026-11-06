@@ -12,9 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import {describe, it} from 'mocha';
+import {afterEach, describe, it} from 'mocha';
 
 import {expect} from 'chai';
+import * as sinon from 'sinon';
+import * as parser from '@conventional-commits/parser';
 import {parseConventionalCommits, ConventionalCommit} from '../src/commit';
 import {buildCommitFromFixture, buildMockCommit} from './helpers';
 
@@ -330,6 +332,38 @@ describe('parseConventionalCommits', () => {
     expect(conventionalCommits[2].bareMessage).to.equal(
       'second squashed change'
     );
+  });
+
+  describe('when parsing fails after sanitizing the body', () => {
+    const sandbox = sinon.createSandbox();
+    afterEach(() => sandbox.restore());
+
+    it('logs the original parser error', async () => {
+      sandbox
+        .stub(parser, 'parser')
+        .onFirstCall()
+        .throws(new Error('original failure'))
+        .onSecondCall()
+        .throws(new Error('retry failure'));
+      const debug = sandbox.stub();
+      const logger = {
+        error: sandbox.stub(),
+        warn: sandbox.stub(),
+        info: sandbox.stub(),
+        debug,
+        trace: sandbox.stub(),
+      };
+      const conventionalCommits = parseConventionalCommits(
+        [buildMockCommit('fix: some fix\n\nfoo(bar(baz)')],
+        logger
+      );
+      expect(conventionalCommits).lengthOf(0);
+      sinon.assert.calledWith(debug, 'error message: Error: original failure');
+      sinon.assert.neverCalledWith(
+        debug,
+        'error message: Error: retry failure'
+      );
+    });
   });
 
   it('handles nested parentheses after a non-ASCII space in the commit body', async () => {
