@@ -194,6 +194,15 @@ defaults (those are documented in comments)
   // absence defaults to false
   "include-commit-authors": true,
 
+  // ignore commits whose subject is GitHub's default merge commit subject
+  // ("Merge pull request #N from owner/branch"). Their body repeats the pull
+  // request title, so without this every merged pull request is listed once
+  // for its branch commits and again for its title. A pull request whose
+  // branch commits are not conventional then gets no changelog entry; set
+  // this to false if you rely on the title for that.
+  // absence defaults to true
+  "skip-github-merge-commits": false,
+
   // when `manifest-release` creates GitHub Releases per package, create
   // those as "Draft" releases (which can later be manually published).
   // absence defaults to false and Releases are created as already Published.
