@@ -285,9 +285,11 @@ function toConventionalChangelogFormat(
         // Any footers that carry semantic meaning, e.g., Release-As, should
         // be added to the footer field, for the benefits of post-processing:
         if (semanticFooter) {
+          // The version is the footer's first text node; any continuation
+          // lines after it are not part of the version.
           let releaseAs = '';
           visit(parent, ['text'], (node: parser.Text) => {
-            releaseAs = node.value;
+            if (releaseAs === '') releaseAs = node.value;
           });
           // record Release-As footer as a note
           headerCommit.notes.push({
@@ -394,10 +396,13 @@ function parseCommits(message: string): parser.ConventionalChangelogCommit[] {
 }
 
 // The excluded whitespace is the parser's own set (`isWhitespace` in
-// @conventional-commits/parser), not JavaScript's `\s`. The parser also ends
-// a line at a bare `\r`, so that closes an unterminated scope too.
+// @conventional-commits/parser), not JavaScript's `\s`.
 const UNTERMINATED_SCOPE_LINE_REGEX =
-  /^[^\uFEFF\t\v\f \u00A0\r\n:!()]+\([^()\r\n]*(?:\(|\r|$)/;
+  /^[^\uFEFF\t\v\f \u00A0\r\n:!()]+\([^()\r\n]*(?:\(|$)/;
+
+// The parser ends a line at CRLF, LF, or a bare CR. The capture group keeps
+// each separator in the split result, so the message rejoins unchanged.
+const LINE_SEPARATOR_REGEX = /(\r\n|\r|\n)/;
 
 /**
  * `@conventional-commits/parser` attempts to parse the start of every body line
@@ -413,13 +418,14 @@ const UNTERMINATED_SCOPE_LINE_REGEX =
  * `Release-As`, issue references, and footer commits).
  */
 function sanitizeBodyScopes(message: string): string {
-  const lines = message.split('\n');
-  for (let i = 1; i < lines.length; i++) {
-    if (UNTERMINATED_SCOPE_LINE_REGEX.test(lines[i])) {
-      lines[i] = ` ${lines[i]}`;
+  // Lines sit at even indexes and separators at odd ones; skip the header.
+  const parts = message.split(LINE_SEPARATOR_REGEX);
+  for (let i = 2; i < parts.length; i += 2) {
+    if (UNTERMINATED_SCOPE_LINE_REGEX.test(parts[i])) {
+      parts[i] = ` ${parts[i]}`;
     }
   }
-  return lines.join('\n');
+  return parts.join('');
 }
 
 /**

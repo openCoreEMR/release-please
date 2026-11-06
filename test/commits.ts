@@ -411,6 +411,44 @@ describe('parseConventionalCommits', () => {
     expect(conventionalCommits[0].bareMessage).to.equal('some fix');
   });
 
+  it('handles nested parentheses on a line that starts after a bare CR', async () => {
+    const commits = [buildMockCommit('fix: some fix\n\nok\rFoo.Bar(baz(abc))')];
+    const conventionalCommits = parseConventionalCommits(commits);
+    expect(conventionalCommits).lengthOf(1);
+    expect(conventionalCommits[0].bareMessage).to.equal('some fix');
+  });
+
+  it('handles nested parentheses in a message with CR-only line endings', async () => {
+    const commits = [
+      buildMockCommit('fix: some fix\r\rFoo.Bar(baz(abc))\rMore details.'),
+    ];
+    const conventionalCommits = parseConventionalCommits(commits);
+    expect(conventionalCommits).lengthOf(1);
+    expect(conventionalCommits[0].bareMessage).to.equal('some fix');
+  });
+
+  it('keeps the Release-As version when a sanitized body line follows it', async () => {
+    const commits = [
+      buildMockCommit('fix: some fix\n\nRelease-As: 2.0.0\nFoo.Bar(baz(abc))'),
+    ];
+    const conventionalCommits = parseConventionalCommits(commits);
+    const releaseAs = conventionalCommits
+      .flatMap(commit => commit.notes)
+      .filter(note => note.title === 'RELEASE AS');
+    expect(releaseAs).to.eql([{title: 'RELEASE AS', text: '2.0.0'}]);
+  });
+
+  it('keeps the Release-As version when a continuation line follows it', async () => {
+    const commits = [
+      buildMockCommit('fix: some fix\n\nRelease-As: 2.0.0\n continued'),
+    ];
+    const conventionalCommits = parseConventionalCommits(commits);
+    const releaseAs = conventionalCommits
+      .flatMap(commit => commit.notes)
+      .filter(note => note.title === 'RELEASE AS');
+    expect(releaseAs).to.eql([{title: 'RELEASE AS', text: '2.0.0'}]);
+  });
+
   it('handles nested parentheses in the body of a nested commit', async () => {
     const commits = [
       buildMockCommit(
