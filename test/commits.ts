@@ -12,9 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import {describe, it} from 'mocha';
+import {afterEach, describe, it} from 'mocha';
 
 import {expect} from 'chai';
+import * as sinon from 'sinon';
+import * as parser from '@conventional-commits/parser';
 import {parseConventionalCommits, ConventionalCommit} from '../src/commit';
 import {buildCommitFromFixture, buildMockCommit} from './helpers';
 
@@ -237,6 +239,280 @@ describe('parseConventionalCommits', () => {
     expect(conventionalCommits[1].bareMessage).to.eql('another feature');
   });
 
+  it('handles commits with nested parentheses in body', async () => {
+    const commits = [
+      buildMockCommit(
+        'feat: something\n\nFoo.Bar(baz(abc)). Some trailing text.'
+      ),
+      buildMockCommit('fix(a(b)): invalid nested scope in header is ignored'),
+    ];
+    const conventionalCommits = parseConventionalCommits(commits);
+    expect(conventionalCommits).lengthOf(1);
+    expect(conventionalCommits[0].type).to.equal('feat');
+    expect(conventionalCommits[0].bareMessage).to.equal('something');
+  });
+
+  it('handles wrapped function calls with unclosed parentheses in body', async () => {
+    const message = [
+      'feat(parser): handle wrapped function calls',
+      '',
+      'Body wraps a call:',
+      'computeValue(longArgumentName',
+      '= true)',
+      'so the upstream parser throws on the unmatched paren.',
+    ].join('\n');
+    const commits = [buildMockCommit(message)];
+    const conventionalCommits = parseConventionalCommits(commits);
+    expect(conventionalCommits).lengthOf(1);
+    expect(conventionalCommits[0].type).to.equal('feat');
+    expect(conventionalCommits[0].scope).to.equal('parser');
+    expect(conventionalCommits[0].bareMessage).to.equal(
+      'handle wrapped function calls'
+    );
+    expect(conventionalCommits[0].breaking).to.be.false;
+  });
+
+  it('preserves footers and BREAKING CHANGE notes when body has nested parentheses', async () => {
+    const message = [
+      'fix(generator): use .jsdoc.json with build/esm/src in ESM template',
+      '',
+      'Reads the file as text and parses it with',
+      '`JSON.parse(stripJsonComments(...))`. Generating `.jsdoc.cjs` failed.',
+      '',
+      'BREAKING CHANGE: `.jsdoc.cjs` is no longer generated',
+      'Fixes #9523',
+    ].join('\n');
+    const commits = [buildMockCommit(message)];
+    const conventionalCommits = parseConventionalCommits(commits);
+    expect(conventionalCommits).lengthOf(1);
+    expect(conventionalCommits[0].type).to.equal('fix');
+    expect(conventionalCommits[0].scope).to.equal('generator');
+    expect(conventionalCommits[0].breaking).to.be.true;
+    expect(conventionalCommits[0].notes).lengthOf(1);
+    expect(conventionalCommits[0].notes[0].title).to.equal('BREAKING CHANGE');
+    expect(conventionalCommits[0].notes[0].text).to.equal(
+      '`.jsdoc.cjs` is no longer generated'
+    );
+    expect(conventionalCommits[0].references).lengthOf(1);
+    expect(conventionalCommits[0].references[0].issue).to.equal('9523');
+  });
+
+  it('handles a GitHub squash merge commit with nested parentheses inside squashed comments in the body', async () => {
+    const squashCommitMessage =
+      'feat(scope): some message (#123)\n\n' +
+      '* refactor(subscope): first squashed change\n\n' +
+      'Some details here.\n\n' +
+      '* refactor(subscope): second squashed change\n\n' +
+      'Foo.Bar(baz(abc)). More details.';
+
+    const commits = [buildMockCommit(squashCommitMessage)];
+    const conventionalCommits = parseConventionalCommits(commits);
+    expect(conventionalCommits).lengthOf(1);
+    expect(conventionalCommits[0].type).to.equal('feat');
+    expect(conventionalCommits[0].scope).to.equal('scope');
+  });
+
+  it('handles a squash merge with split commits that contain a nested parenthesis commit', async () => {
+    const squashSplitMessage =
+      'feat(scope): some message (#123)\n\n' +
+      'refactor(subscope): first squashed change\n\n' +
+      'Some details here.\n\n' +
+      'refactor(subscope): second squashed change\n\n' +
+      'Foo.Bar(baz(abc)). More details.';
+
+    const commits = [buildMockCommit(squashSplitMessage)];
+    const conventionalCommits = parseConventionalCommits(commits);
+    expect(conventionalCommits).lengthOf(3);
+    expect(conventionalCommits[0].type).to.equal('feat');
+    expect(conventionalCommits[1].type).to.equal('refactor');
+    expect(conventionalCommits[1].bareMessage).to.equal(
+      'first squashed change'
+    );
+    expect(conventionalCommits[2].type).to.equal('refactor');
+    expect(conventionalCommits[2].bareMessage).to.equal(
+      'second squashed change'
+    );
+  });
+
+  describe('when parsing fails after sanitizing the body', () => {
+    const sandbox = sinon.createSandbox();
+    afterEach(() => sandbox.restore());
+
+    it('logs the original parser error', async () => {
+      sandbox
+        .stub(parser, 'parser')
+        .onFirstCall()
+        .throws(new Error('original failure'))
+        .onSecondCall()
+        .throws(new Error('retry failure'));
+      const debug = sandbox.stub();
+      const logger = {
+        error: sandbox.stub(),
+        warn: sandbox.stub(),
+        info: sandbox.stub(),
+        debug,
+        trace: sandbox.stub(),
+      };
+      const conventionalCommits = parseConventionalCommits(
+        [buildMockCommit('fix: some fix\n\nfoo(bar(baz)')],
+        logger
+      );
+      expect(conventionalCommits).lengthOf(0);
+      sinon.assert.calledWith(debug, 'error message: Error: original failure');
+      sinon.assert.neverCalledWith(
+        debug,
+        'error message: Error: retry failure'
+      );
+    });
+  });
+
+  it('handles nested parentheses in a CRLF commit body', async () => {
+    const commits = [
+      buildMockCommit(
+        'fix: some fix\r\n\r\nFoo.Bar(baz(abc))\r\nMore details.'
+      ),
+    ];
+    const conventionalCommits = parseConventionalCommits(commits);
+    expect(conventionalCommits).lengthOf(1);
+    expect(conventionalCommits[0].type).to.equal('fix');
+    expect(conventionalCommits[0].bareMessage).to.equal('some fix');
+  });
+
+  it('keeps the whole BREAKING CHANGE footer when a continuation line follows', async () => {
+    const commits = [
+      buildMockCommit(
+        'feat: some feature\n\nBREAKING CHANGE: the old API is gone\n continued here'
+      ),
+    ];
+    const conventionalCommits = parseConventionalCommits(commits);
+    expect(conventionalCommits).lengthOf(1);
+    expect(conventionalCommits[0].notes).to.eql([
+      {title: 'BREAKING CHANGE', text: 'the old API is gone continued here'},
+    ]);
+  });
+
+  it('keeps the BREAKING CHANGE footer when a sanitized body line follows', async () => {
+    const commits = [
+      buildMockCommit(
+        'feat: some feature\n\nBREAKING CHANGE: the old API is gone\nFoo.Bar(baz(abc))'
+      ),
+    ];
+    const conventionalCommits = parseConventionalCommits(commits);
+    expect(conventionalCommits).lengthOf(1);
+    expect(conventionalCommits[0].notes[0].text).to.match(
+      /^the old API is gone/
+    );
+  });
+
+  it('handles an unterminated scope ended by a bare CR in the commit body', async () => {
+    const commits = [buildMockCommit('fix: some fix\n\nfoo(bar\rbaz')];
+    const conventionalCommits = parseConventionalCommits(commits);
+    expect(conventionalCommits).lengthOf(1);
+    expect(conventionalCommits[0].bareMessage).to.equal('some fix');
+  });
+
+  it('handles nested parentheses on a line that starts after a bare CR', async () => {
+    const commits = [buildMockCommit('fix: some fix\n\nok\rFoo.Bar(baz(abc))')];
+    const conventionalCommits = parseConventionalCommits(commits);
+    expect(conventionalCommits).lengthOf(1);
+    expect(conventionalCommits[0].bareMessage).to.equal('some fix');
+  });
+
+  it('handles nested parentheses in a message with CR-only line endings', async () => {
+    const commits = [
+      buildMockCommit('fix: some fix\r\rFoo.Bar(baz(abc))\rMore details.'),
+    ];
+    const conventionalCommits = parseConventionalCommits(commits);
+    expect(conventionalCommits).lengthOf(1);
+    expect(conventionalCommits[0].bareMessage).to.equal('some fix');
+  });
+
+  it('keeps the Release-As version when a sanitized body line follows it', async () => {
+    const commits = [
+      buildMockCommit('fix: some fix\n\nRelease-As: 2.0.0\nFoo.Bar(baz(abc))'),
+    ];
+    const conventionalCommits = parseConventionalCommits(commits);
+    const releaseAs = conventionalCommits
+      .flatMap(commit => commit.notes)
+      .filter(note => note.title === 'RELEASE AS');
+    expect(releaseAs).to.eql([{title: 'RELEASE AS', text: '2.0.0'}]);
+  });
+
+  it('keeps the Release-As version when a continuation line follows it', async () => {
+    const commits = [
+      buildMockCommit('fix: some fix\n\nRelease-As: 2.0.0\n continued'),
+    ];
+    const conventionalCommits = parseConventionalCommits(commits);
+    const releaseAs = conventionalCommits
+      .flatMap(commit => commit.notes)
+      .filter(note => note.title === 'RELEASE AS');
+    expect(releaseAs).to.eql([{title: 'RELEASE AS', text: '2.0.0'}]);
+  });
+
+  it('keeps a breaking footer commit when a sanitized line follows it', async () => {
+    const commits = [
+      buildMockCommit(
+        'chore: merge\n\nfix(core)!: breaking fix\nFoo.Bar(baz(abc))'
+      ),
+    ];
+    const conventionalCommits = parseConventionalCommits(commits);
+    const fix = conventionalCommits.find(commit => commit.type === 'fix');
+    expect(fix, 'footer commit').to.not.be.undefined;
+    expect(fix!.scope).to.equal('core');
+    expect(fix!.breaking).to.be.true;
+    expect(fix!.bareMessage).to.equal('breaking fix');
+  });
+
+  it('keeps the issue reference when a sanitized line follows the footer', async () => {
+    const commits = [
+      buildMockCommit('fix: some fix\n\nFixes #9523\nFoo.Bar(baz(abc))'),
+    ];
+    const conventionalCommits = parseConventionalCommits(commits);
+    expect(conventionalCommits).lengthOf(1);
+    expect(conventionalCommits[0].references.map(ref => ref.issue)).to.eql([
+      '9523',
+    ]);
+  });
+
+  it('keeps the issue reference when a continuation line follows the footer', async () => {
+    const commits = [
+      buildMockCommit('fix: some fix\n\nFixes #9523\n continued'),
+    ];
+    const conventionalCommits = parseConventionalCommits(commits);
+    expect(conventionalCommits).lengthOf(1);
+    expect(conventionalCommits[0].references.map(ref => ref.issue)).to.eql([
+      '9523',
+    ]);
+  });
+
+  it('handles nested parentheses in the body of a nested commit', async () => {
+    const commits = [
+      buildMockCommit(
+        'feat: outer change\n\n' +
+          'BEGIN_NESTED_COMMIT\n' +
+          'fix(core): nested fix\n\n' +
+          'Foo.Bar(baz(abc))\n' +
+          'END_NESTED_COMMIT'
+      ),
+    ];
+    const conventionalCommits = parseConventionalCommits(commits);
+    expect(conventionalCommits).lengthOf(2);
+    expect(conventionalCommits[1].type).to.equal('fix');
+    expect(conventionalCommits[1].scope).to.equal('core');
+    expect(conventionalCommits[1].bareMessage).to.equal('nested fix');
+  });
+
+  it('handles nested parentheses after a non-ASCII space in the commit body', async () => {
+    // The parser treats only U+FEFF, tab, VT, FF, space and NBSP as
+    // whitespace, so an em space does not end the footer token.
+    const commits = [
+      buildMockCommit('fix: some fix\n\nfoo\u2003bar(baz(qux))'),
+    ];
+    const conventionalCommits = parseConventionalCommits(commits);
+    expect(conventionalCommits).lengthOf(1);
+    expect(conventionalCommits[0].type).to.equal('fix');
+  });
+
   it('handles a special commit separator', async () => {
     const commits = [buildCommitFromFixture('multiple-commits-with-separator')];
     const conventionalCommits = parseConventionalCommits(commits);
@@ -354,6 +630,23 @@ describe('parseConventionalCommits', () => {
         'c',
       ]);
     });
+  });
+
+  it('handles commit author info', async () => {
+    const commit = buildMockCommit('chore: some commit');
+    commit.author = {
+      name: 'Foo',
+      email: 'foo@example.com',
+      username: 'foo',
+    };
+
+    const conventionalCommits = parseConventionalCommits([commit]);
+    expect(conventionalCommits).lengthOf(1);
+    expect(conventionalCommits[0].type).to.eql('chore');
+    expect(conventionalCommits[0].author).to.not.be.undefined;
+    expect(conventionalCommits[0].author?.name).to.eql('Foo');
+    expect(conventionalCommits[0].author?.email).to.eql('foo@example.com');
+    expect(conventionalCommits[0].author?.username).to.eql('foo');
   });
 
   // it('ignores reverted commits', async () => {

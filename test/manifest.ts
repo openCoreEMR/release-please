@@ -3536,6 +3536,7 @@ describe('Manifest', () => {
             notes: [],
             references: [],
             breaking: false,
+            author: undefined,
           },
           {
             sha: 'aaaaaa',
@@ -3548,9 +3549,183 @@ describe('Manifest', () => {
             notes: [],
             references: [],
             breaking: false,
+            author: undefined,
           },
         ]);
       });
+    });
+
+    it('should include commit author info', async () => {
+      const spyPlugin = sinon.spy(new SentenceCase(github, 'main', {}));
+      sandbox
+        .stub(pluginFactory, 'buildPlugin')
+        .withArgs(sinon.match.has('type', 'sentence-case'))
+        // TS compiler is having issues with sinon.spy.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        .returns(spyPlugin as any as InstanceType<typeof SentenceCase>);
+      mockReleases(sandbox, github, []);
+      mockTags(sandbox, github, [
+        {
+          name: 'v1.0.0',
+          sha: 'abc123',
+        },
+      ]);
+      const commitsStub = mockCommits(sandbox, github, [
+        {
+          sha: 'def456',
+          message: 'fix: some bugfix',
+          files: [],
+          author: {
+            name: 'Foo',
+            email: 'foo@example.com',
+            username: 'foo',
+          },
+        },
+        {
+          sha: 'deadbeef',
+          message: 'feat: added thing',
+          files: [],
+          author: {
+            name: 'Bar',
+            email: 'bar@example.com',
+            username: 'bar',
+          },
+        },
+      ]);
+      const manifest = new Manifest(
+        github,
+        'main',
+        {
+          '.': {
+            releaseType: 'simple',
+            includeCommitAuthors: true,
+          },
+        },
+        {
+          '.': Version.parse('1.0.0'),
+        },
+        {
+          commitSearchDepth: 2,
+          plugins: ['sentence-case'],
+        }
+      );
+      const pullRequests = await manifest.buildPullRequests();
+      expect(pullRequests).not.empty;
+      const notes = pullRequests[0].body.toString();
+      expect(notes).to.include(
+        '* Some bugfix ([@foo](https://github.com/foo)) ([def456]'
+      );
+      expect(notes).to.include(
+        '* Added thing ([@bar](https://github.com/bar)) ([deadbee]'
+      );
+      sinon.assert.calledOnceWithMatch(
+        commitsStub,
+        'main',
+        sinon.match.has('maxResults', 2)
+      );
+      sinon.assert.calledWith(spyPlugin.processCommits, [
+        {
+          sha: 'def456',
+          message: 'fix: Some bugfix',
+          files: [],
+          pullRequest: undefined,
+          type: 'fix',
+          scope: null,
+          bareMessage: 'Some bugfix',
+          notes: [],
+          references: [],
+          breaking: false,
+          author: {name: 'Foo', email: 'foo@example.com', username: 'foo'},
+        },
+        {
+          sha: 'deadbeef',
+          message: 'feat: Added thing',
+          files: [],
+          pullRequest: undefined,
+          type: 'feat',
+          scope: null,
+          bareMessage: 'Added thing',
+          notes: [],
+          references: [],
+          breaking: false,
+          author: {name: 'Bar', email: 'bar@example.com', username: 'bar'},
+        },
+      ]);
+    });
+
+    it('should include commit authors for non-root paths', async () => {
+      mockReleases(sandbox, github, [
+        {
+          id: 123456,
+          sha: 'abc123',
+          tagName: 'pkg1-v1.0.0',
+          url: 'https://github.com/fake-owner/fake-repo/releases/tag/pkg1-v1.0.0',
+        },
+        {
+          id: 654321,
+          sha: 'abc123',
+          tagName: 'pkg2-v0.2.3',
+          url: 'https://github.com/fake-owner/fake-repo/releases/tag/pkg2-v0.2.3',
+        },
+      ]);
+      mockCommits(sandbox, github, [
+        {
+          sha: 'aaaaaaa1',
+          message: 'fix: some bugfix',
+          files: ['path/a/foo'],
+          author: {name: 'Foo', email: 'foo@example.com', username: 'foo'},
+        },
+        {
+          sha: 'bbbbbbb2',
+          message: 'feat: added thing',
+          files: ['path/b/foo'],
+          author: {name: 'Bar', email: 'bar@example.com', username: 'bar'},
+        },
+        {
+          sha: 'abc123',
+          message: 'chore: release main',
+          files: [],
+          pullRequest: {
+            headBranchName: 'release-please/branches/main',
+            baseBranchName: 'main',
+            number: 123,
+            title: 'chore: release main',
+            body: '',
+            labels: [],
+            files: [],
+            sha: 'abc123',
+          },
+        },
+      ]);
+      const manifest = new Manifest(
+        github,
+        'main',
+        {
+          'path/a': {
+            releaseType: 'simple',
+            component: 'pkg1',
+            includeCommitAuthors: true,
+          },
+          'path/b': {
+            releaseType: 'simple',
+            component: 'pkg2',
+            includeCommitAuthors: true,
+          },
+        },
+        {
+          'path/a': Version.parse('1.0.0'),
+          'path/b': Version.parse('0.2.3'),
+        }
+      );
+      const pullRequests = await manifest.buildPullRequests();
+      expect(pullRequests).lengthOf(1);
+      const notes = pullRequests[0].body.toString();
+      expect(notes).to.include(
+        '* some bugfix ([@foo](https://github.com/foo)) ([aaaaaaa]'
+      );
+      expect(notes).to.include(
+        '* added thing ([@bar](https://github.com/bar)) ([bbbbbbb]'
+      );
     });
 
     it('should fallback to tagged version', async () => {

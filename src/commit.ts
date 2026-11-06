@@ -169,8 +169,11 @@ function toConventionalChangelogFormat(
           // will be identified when the footer is parsed as a commit:
           if (!node.value.includes('BREAKING')) return;
           parent = ancestors.pop();
+          // Append rather than assign, so continuation lines of the footer
+          // do not replace the description.
+          breaking.text = '';
           visit(parent, ['text', 'newline'], (node: parser.Text) => {
-            breaking.text = node.value;
+            breaking.text += node.value;
           });
           break;
       }
@@ -222,6 +225,9 @@ function toConventionalChangelogFormat(
             if (node.value.includes('#')) hasRefSepartor = true;
             break;
           case 'text':
+            // The reference is the footer's first text node; any
+            // continuation lines after it are not part of it.
+            if (reference.issue !== '') break;
             // Footer of the form "Refs: #99"
             if (node.value.charAt(0) === '#') {
               hasRefSepartor = true;
@@ -282,9 +288,11 @@ function toConventionalChangelogFormat(
         // Any footers that carry semantic meaning, e.g., Release-As, should
         // be added to the footer field, for the benefits of post-processing:
         if (semanticFooter) {
+          // The version is the footer's first text node; any continuation
+          // lines after it are not part of the version.
           let releaseAs = '';
           visit(parent, ['text'], (node: parser.Text) => {
-            releaseAs = node.value;
+            if (releaseAs === '') releaseAs = node.value;
           });
           // record Release-As footer as a note
           headerCommit.notes.push({
@@ -296,7 +304,7 @@ function toConventionalChangelogFormat(
         }
         try {
           for (const commit of toConventionalChangelogFormat(
-            parser.parser(footerText)
+            parseMessage(footerText)
           )) {
             commits.push(commit);
           }
@@ -368,10 +376,66 @@ function hasExtendedContext(line: string) {
   return false;
 }
 
+/**
+ * Parse a message, retrying once with `sanitizeBodyScopes` applied when the
+ * parser throws. Footer commits are re-parsed through this too, so they get
+ * the same recovery as the message they came from.
+ */
+function parseMessage(message: string): parser.Message {
+  try {
+    return parser.parser(message);
+  } catch (err) {
+    const sanitizedMessage = sanitizeBodyScopes(message);
+    if (sanitizedMessage === message) {
+      throw err;
+    }
+    // Report the original failure: the retry's error describes the
+    // rewritten message, not the commit.
+    try {
+      return parser.parser(sanitizedMessage);
+    } catch {
+      throw err;
+    }
+  }
+}
+
 function parseCommits(message: string): parser.ConventionalChangelogCommit[] {
   return conventionalCommitsFilter(
-    toConventionalChangelogFormat(parser.parser(message))
+    toConventionalChangelogFormat(parseMessage(message))
   ).map(postProcessCommits);
+}
+
+// The excluded whitespace is the parser's own set (`isWhitespace` in
+// @conventional-commits/parser), not JavaScript's `\s`.
+const UNTERMINATED_SCOPE_LINE_REGEX =
+  /^[^\uFEFF\t\v\f \u00A0\r\n:!()]+\([^()\r\n]*(?:\(|$)/;
+
+// The parser ends a line at CRLF, LF, or a bare CR. The capture group keeps
+// each separator in the split result, so the message rejoins unchanged.
+const LINE_SEPARATOR_REGEX = /(\r\n|\r|\n)/;
+
+/**
+ * `@conventional-commits/parser` attempts to parse the start of every body line
+ * as a Conventional Commit footer (`<type>(<scope>): <value>`). If a body line
+ * starts at column 0 with `token(` and encounters another `(` or end-of-line
+ * before a closing `)` (such as nested parentheses `Foo.Bar(baz(abc))` or a
+ * function call wrapped across lines), the parser's `scope()` rule throws an
+ * uncaught `Error: unexpected token ... valid tokens [)]`.
+ *
+ * Since a valid Conventional Commit `<scope>` can never contain `(` or span
+ * lines, prefixing a single space to matching body lines prevents `scope()`
+ * from throwing while preserving all valid footers (`BREAKING CHANGE`,
+ * `Release-As`, issue references, and footer commits).
+ */
+function sanitizeBodyScopes(message: string): string {
+  // Lines sit at even indexes and separators at odd ones; skip the header.
+  const parts = message.split(LINE_SEPARATOR_REGEX);
+  for (let i = 2; i < parts.length; i += 2) {
+    if (UNTERMINATED_SCOPE_LINE_REGEX.test(parts[i])) {
+      parts[i] = ` ${parts[i]}`;
+    }
+  }
+  return parts.join('');
 }
 
 /**
@@ -458,6 +522,7 @@ export function parseConventionalCommits(
             notes: parsedCommit.notes,
             references: parsedCommit.references,
             breaking,
+            author: commit.author,
           });
         }
       } catch (_err) {

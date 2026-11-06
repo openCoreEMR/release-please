@@ -683,6 +683,7 @@ export class Manifest {
         message: commit.message,
         files: commit.files,
         pullRequest: commit.pullRequest,
+        author: commit.author,
       });
     }
 
