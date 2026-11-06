@@ -3611,6 +3611,8 @@ describe('Manifest', () => {
       );
       const pullRequests = await manifest.buildPullRequests();
       expect(pullRequests).not.empty;
+      expect(pullRequests[0].body.toString()).to.include('@foo');
+      expect(pullRequests[0].body.toString()).to.include('@bar');
       sinon.assert.calledOnceWithMatch(
         commitsStub,
         'main',

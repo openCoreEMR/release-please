@@ -323,7 +323,24 @@ describe('parseConventionalCommits', () => {
     expect(conventionalCommits).lengthOf(3);
     expect(conventionalCommits[0].type).to.equal('feat');
     expect(conventionalCommits[1].type).to.equal('refactor');
+    expect(conventionalCommits[1].bareMessage).to.equal(
+      'first squashed change'
+    );
     expect(conventionalCommits[2].type).to.equal('refactor');
+    expect(conventionalCommits[2].bareMessage).to.equal(
+      'second squashed change'
+    );
+  });
+
+  it('handles nested parentheses after a non-ASCII space in the commit body', async () => {
+    // The parser treats only U+FEFF, tab, VT, FF, space and NBSP as
+    // whitespace, so an em space does not end the footer token.
+    const commits = [
+      buildMockCommit('fix: some fix\n\nfoo\u2003bar(baz(qux))'),
+    ];
+    const conventionalCommits = parseConventionalCommits(commits);
+    expect(conventionalCommits).lengthOf(1);
+    expect(conventionalCommits[0].type).to.equal('fix');
   });
 
   it('handles a special commit separator', async () => {
