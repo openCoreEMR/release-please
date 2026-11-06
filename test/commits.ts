@@ -449,6 +449,42 @@ describe('parseConventionalCommits', () => {
     expect(releaseAs).to.eql([{title: 'RELEASE AS', text: '2.0.0'}]);
   });
 
+  it('keeps a breaking footer commit when a sanitized line follows it', async () => {
+    const commits = [
+      buildMockCommit(
+        'chore: merge\n\nfix(core)!: breaking fix\nFoo.Bar(baz(abc))'
+      ),
+    ];
+    const conventionalCommits = parseConventionalCommits(commits);
+    const fix = conventionalCommits.find(commit => commit.type === 'fix');
+    expect(fix, 'footer commit').to.not.be.undefined;
+    expect(fix!.scope).to.equal('core');
+    expect(fix!.breaking).to.be.true;
+    expect(fix!.bareMessage).to.equal('breaking fix');
+  });
+
+  it('keeps the issue reference when a sanitized line follows the footer', async () => {
+    const commits = [
+      buildMockCommit('fix: some fix\n\nFixes #9523\nFoo.Bar(baz(abc))'),
+    ];
+    const conventionalCommits = parseConventionalCommits(commits);
+    expect(conventionalCommits).lengthOf(1);
+    expect(conventionalCommits[0].references.map(ref => ref.issue)).to.eql([
+      '9523',
+    ]);
+  });
+
+  it('keeps the issue reference when a continuation line follows the footer', async () => {
+    const commits = [
+      buildMockCommit('fix: some fix\n\nFixes #9523\n continued'),
+    ];
+    const conventionalCommits = parseConventionalCommits(commits);
+    expect(conventionalCommits).lengthOf(1);
+    expect(conventionalCommits[0].references.map(ref => ref.issue)).to.eql([
+      '9523',
+    ]);
+  });
+
   it('handles nested parentheses in the body of a nested commit', async () => {
     const commits = [
       buildMockCommit(
