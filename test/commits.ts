@@ -378,6 +378,32 @@ describe('parseConventionalCommits', () => {
     expect(conventionalCommits[0].bareMessage).to.equal('some fix');
   });
 
+  it('keeps the whole BREAKING CHANGE footer when a continuation line follows', async () => {
+    const commits = [
+      buildMockCommit(
+        'feat: some feature\n\nBREAKING CHANGE: the old API is gone\n continued here'
+      ),
+    ];
+    const conventionalCommits = parseConventionalCommits(commits);
+    expect(conventionalCommits).lengthOf(1);
+    expect(conventionalCommits[0].notes).to.eql([
+      {title: 'BREAKING CHANGE', text: 'the old API is gone continued here'},
+    ]);
+  });
+
+  it('keeps the BREAKING CHANGE footer when a sanitized body line follows', async () => {
+    const commits = [
+      buildMockCommit(
+        'feat: some feature\n\nBREAKING CHANGE: the old API is gone\nFoo.Bar(baz(abc))'
+      ),
+    ];
+    const conventionalCommits = parseConventionalCommits(commits);
+    expect(conventionalCommits).lengthOf(1);
+    expect(conventionalCommits[0].notes[0].text).to.match(
+      /^the old API is gone/
+    );
+  });
+
   it('handles an unterminated scope ended by a bare CR in the commit body', async () => {
     const commits = [buildMockCommit('fix: some fix\n\nfoo(bar\rbaz')];
     const conventionalCommits = parseConventionalCommits(commits);

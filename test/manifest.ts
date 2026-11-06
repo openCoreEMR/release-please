@@ -3653,6 +3653,81 @@ describe('Manifest', () => {
       ]);
     });
 
+    it('should include commit authors for non-root paths', async () => {
+      mockReleases(sandbox, github, [
+        {
+          id: 123456,
+          sha: 'abc123',
+          tagName: 'pkg1-v1.0.0',
+          url: 'https://github.com/fake-owner/fake-repo/releases/tag/pkg1-v1.0.0',
+        },
+        {
+          id: 654321,
+          sha: 'abc123',
+          tagName: 'pkg2-v0.2.3',
+          url: 'https://github.com/fake-owner/fake-repo/releases/tag/pkg2-v0.2.3',
+        },
+      ]);
+      mockCommits(sandbox, github, [
+        {
+          sha: 'aaaaaaa1',
+          message: 'fix: some bugfix',
+          files: ['path/a/foo'],
+          author: {name: 'Foo', email: 'foo@example.com', username: 'foo'},
+        },
+        {
+          sha: 'bbbbbbb2',
+          message: 'feat: added thing',
+          files: ['path/b/foo'],
+          author: {name: 'Bar', email: 'bar@example.com', username: 'bar'},
+        },
+        {
+          sha: 'abc123',
+          message: 'chore: release main',
+          files: [],
+          pullRequest: {
+            headBranchName: 'release-please/branches/main',
+            baseBranchName: 'main',
+            number: 123,
+            title: 'chore: release main',
+            body: '',
+            labels: [],
+            files: [],
+            sha: 'abc123',
+          },
+        },
+      ]);
+      const manifest = new Manifest(
+        github,
+        'main',
+        {
+          'path/a': {
+            releaseType: 'simple',
+            component: 'pkg1',
+            includeCommitAuthors: true,
+          },
+          'path/b': {
+            releaseType: 'simple',
+            component: 'pkg2',
+            includeCommitAuthors: true,
+          },
+        },
+        {
+          'path/a': Version.parse('1.0.0'),
+          'path/b': Version.parse('0.2.3'),
+        }
+      );
+      const pullRequests = await manifest.buildPullRequests();
+      expect(pullRequests).lengthOf(1);
+      const notes = pullRequests[0].body.toString();
+      expect(notes).to.include(
+        '* some bugfix ([@foo](https://github.com/foo)) ([aaaaaaa]'
+      );
+      expect(notes).to.include(
+        '* added thing ([@bar](https://github.com/bar)) ([bbbbbbb]'
+      );
+    });
+
     it('should fallback to tagged version', async () => {
       mockReleases(sandbox, github, []);
       mockTags(sandbox, github, [
