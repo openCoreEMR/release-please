@@ -31,7 +31,8 @@ import {Commit} from '../commit';
  */
 export class ReleaseAncestry {
   private tracking = true;
-  private readonly visited = new Set<string>();
+  // Walked commit SHA => its parent SHAs.
+  private readonly parentsOf = new Map<string, string[]>();
   // Commits reachable from the walk's head that have not been walked yet.
   private readonly frontier = new Set<string>();
   // Release SHA => the release commit and every ancestor found so far.
@@ -49,19 +50,30 @@ export class ReleaseAncestry {
       this.tracking = false;
       return;
     }
-    this.visited.add(commit.sha);
+    this.parentsOf.set(commit.sha, parents);
     this.frontier.delete(commit.sha);
     for (const parent of parents) {
-      if (!this.visited.has(parent)) {
+      if (!this.parentsOf.has(parent)) {
         this.frontier.add(parent);
       }
     }
     for (const ancestors of this.contained.values()) {
       if (ancestors.has(commit.sha)) {
-        for (const parent of parents) {
-          ancestors.add(parent);
-        }
+        this.contain(ancestors, parents);
       }
+    }
+  }
+
+  // Add `shas` and, through edges already walked, their ancestors. Dates
+  // can be skewed, so a parent may have been walked before its child.
+  private contain(ancestors: Set<string>, shas: string[]): void {
+    const pending = [...shas];
+    for (let sha = pending.pop(); sha !== undefined; sha = pending.pop()) {
+      if (ancestors.has(sha)) {
+        continue;
+      }
+      ancestors.add(sha);
+      pending.push(...(this.parentsOf.get(sha) ?? []));
     }
   }
 

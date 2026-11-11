@@ -90,6 +90,20 @@ describe('ReleaseAncestry', () => {
     expect(shas(ancestry.notReleasedBy(linear, 'new'))).to.eql(['head']);
   });
 
+  it('contains a parent walked before its release', () => {
+    // Skewed dates: `a` sorts ahead of its child `rel`.
+    const skewed = [
+      commit('head', ['rel']),
+      commit('a', ['b']),
+      commit('rel', ['a']),
+      commit('b', []),
+    ];
+    const ancestry = new ReleaseAncestry(['rel']);
+    skewed.forEach(c => ancestry.visit(c));
+    expect(shas(ancestry.notReleasedBy(skewed, 'rel'))).to.eql(['head']);
+    expect(ancestry.isComplete()).to.be.true;
+  });
+
   it('returns every commit for a path with no release', () => {
     const ancestry = new ReleaseAncestry(['rel']);
     history.forEach(c => ancestry.visit(c));
