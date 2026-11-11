@@ -104,6 +104,32 @@ describe('ReleaseAncestry', () => {
     expect(ancestry.isComplete()).to.be.true;
   });
 
+  it('keeps walking until a commit walked out of order is linked', () => {
+    // Skewed dates: `old` sorts ahead of `late` and `p`, though only `q`,
+    // walked last, leads to it.
+    const skewed = [
+      commit('head', ['rel', 'late']),
+      commit('rel', ['p']),
+      commit('old', []),
+      commit('late', ['p']),
+      commit('p', ['q']),
+      commit('q', ['old']),
+    ];
+    const ancestry = new ReleaseAncestry(['rel']);
+    const completeBefore: Record<string, boolean> = {};
+    for (const c of skewed) {
+      completeBefore[c.sha] = ancestry.isComplete();
+      ancestry.visit(c);
+    }
+    expect(completeBefore.p).to.be.false;
+    expect(completeBefore.q).to.be.false;
+    expect(ancestry.isComplete()).to.be.true;
+    expect(shas(ancestry.notReleasedBy(skewed, 'rel'))).to.eql([
+      'head',
+      'late',
+    ]);
+  });
+
   it('returns every commit for a path with no release', () => {
     const ancestry = new ReleaseAncestry(['rel']);
     history.forEach(c => ancestry.visit(c));
