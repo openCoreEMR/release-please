@@ -85,6 +85,11 @@ interface GraphQLCommit {
   sha: string;
   message: string;
   author?: GraphQLCommitAuthor;
+  parents?: {
+    nodes: {
+      oid: string;
+    }[];
+  };
   associatedPullRequests: {
     nodes: GraphQLPullRequest[];
   };
@@ -281,6 +286,11 @@ export class GitHub implements Scm {
                   }
                   sha: oid
                   message
+                  parents(first: 10) {
+                    nodes {
+                      oid
+                    }
+                  }
                   author {
                     name
                     email
@@ -346,6 +356,7 @@ export class GitHub implements Scm {
       const commit: Commit = {
         sha: graphCommit.sha,
         message: graphCommit.message,
+        parents: graphCommit.parents?.nodes.map(node => node.oid),
         author: graphCommit.author
           ? {
               name: graphCommit.author.name || 'Unknown',
