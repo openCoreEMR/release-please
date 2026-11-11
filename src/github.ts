@@ -86,6 +86,7 @@ interface GraphQLCommit {
   message: string;
   author?: GraphQLCommitAuthor;
   parents?: {
+    totalCount: number;
     nodes: {
       oid: string;
     }[];
@@ -287,6 +288,7 @@ export class GitHub implements Scm {
                   sha: oid
                   message
                   parents(first: 10) {
+                    totalCount
                     nodes {
                       oid
                     }
@@ -356,7 +358,7 @@ export class GitHub implements Scm {
       const commit: Commit = {
         sha: graphCommit.sha,
         message: graphCommit.message,
-        parents: graphCommit.parents?.nodes.map(node => node.oid),
+        parents: parentShas(graphCommit),
         author: graphCommit.author
           ? {
               name: graphCommit.author.name || 'Unknown',
@@ -1071,3 +1073,15 @@ const wrapAsync = <T extends Array<any>, V>(
 
 export const sleepInMs = (ms: number) =>
   new Promise(resolve => setTimeout(resolve, ms));
+
+/**
+ * The commit's parent SHAs, or `undefined` when the query returned only
+ * some of them, so that callers treat its ancestry as unknown.
+ */
+function parentShas(commit: GraphQLCommit): string[] | undefined {
+  const parents = commit.parents;
+  if (!parents || parents.nodes.length < parents.totalCount) {
+    return undefined;
+  }
+  return parents.nodes.map(node => node.oid);
+}

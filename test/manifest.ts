@@ -1744,16 +1744,18 @@ describe('Manifest', () => {
             parents: ['bbb111'],
           },
           {
-            sha: 'bbb111',
-            message: 'feat: late feature',
-            files: [],
-            parents: ['mmm000'],
-          },
-          {
+            // A skewed date sorts this released commit ahead of the
+            // branch's first, so the walk collects it and must filter it.
             sha: 'mmm000',
             message: 'fix: already released',
             files: [],
             parents: ['zzz000'],
+          },
+          {
+            sha: 'bbb111',
+            message: 'feat: late feature',
+            files: [],
+            parents: ['mmm000'],
           },
           {
             sha: 'zzz000',
