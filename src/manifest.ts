@@ -715,14 +715,19 @@ export class Manifest {
     });
     const splitCommits = cs.split(commits);
 
-    // limit paths to ones since the last release
+    // limit paths to ones since the last release. Filter by ancestry only
+    // when the walk resolved it; a walk that stopped early (configured last
+    // release, bootstrap, search depth) keeps the date-order cutoff.
+    const ancestryResolved = ancestry.isComplete();
     let commitsPerPath: Record<string, Commit[]> = {};
     for (const path in this.repositoryConfig) {
       const pathCommits =
         path === ROOT_PROJECT_PATH ? commits : splitCommits[path] ?? [];
+      const unreleased = ancestryResolved
+        ? ancestry.notReleasedBy(pathCommits, releaseShasByPath[path])
+        : undefined;
       commitsPerPath[path] =
-        ancestry.notReleasedBy(pathCommits, releaseShasByPath[path]) ??
-        commitsAfterSha(pathCommits, releaseShasByPath[path]);
+        unreleased ?? commitsAfterSha(pathCommits, releaseShasByPath[path]);
     }
     const commitExclude = new CommitExclude(this.repositoryConfig);
     commitsPerPath = commitExclude.excludeCommits(commitsPerPath);
