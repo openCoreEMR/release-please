@@ -1932,6 +1932,97 @@ describe('Manifest', () => {
         expect(notes).not.to.include('early feature');
       });
 
+      it('fails rather than release without an unreleased commit', async () => {
+        mockReleases(sandbox, github, [
+          {
+            id: 123456,
+            sha: 'abc123',
+            tagName: 'v1.0.0',
+            url: 'https://github.com/fake-owner/fake-repo/releases/tag/v1.0.0',
+          },
+        ]);
+        mockCommits(sandbox, github, commits, {
+          unreleasedByRelease: {
+            abc123: ['bbb000', 'bbb111', 'xxx111', 'bbb222', 'mmm222'],
+          },
+        });
+        const manifest = new Manifest(
+          github,
+          'main',
+          {'.': {releaseType: 'simple'}},
+          {'.': Version.parse('1.0.0')}
+        );
+        await assert.rejects(manifest.buildPullRequests(), /bbb000/);
+      });
+
+      it('fetches late commits newest first across releases', async () => {
+        // The newer release is found first, but the older release's
+        // comparison holds it and sets the order.
+        mockReleases(sandbox, github, [
+          {
+            id: 2,
+            sha: 'rel222',
+            tagName: 'a-v1.0.0',
+            url: 'https://github.com/fake-owner/fake-repo/releases/tag/a-v1.0.0',
+          },
+          {
+            id: 1,
+            sha: 'rel111',
+            tagName: 'b-v1.0.0',
+            url: 'https://github.com/fake-owner/fake-repo/releases/tag/b-v1.0.0',
+          },
+        ]);
+        const late = (sha: string, path: string) => ({
+          sha,
+          message: `fix: ${sha}`,
+          files: [`${path}/file`],
+          parents: [],
+        });
+        mockCommits(
+          sandbox,
+          github,
+          [
+            {
+              sha: 'hhh000',
+              message: 'fix: head',
+              files: ['a/file'],
+              parents: [],
+            },
+            {
+              sha: 'rel222',
+              message: 'chore: release a',
+              files: [],
+              parents: [],
+            },
+            {
+              sha: 'rel111',
+              message: 'chore: release b',
+              files: [],
+              parents: [],
+            },
+          ],
+          {
+            unreleasedByRelease: {
+              rel222: ['bbb222', 'hhh000'],
+              rel111: ['bbb111', 'bbb222', 'rel222', 'hhh000'],
+            },
+            bySha: [late('bbb222', 'a'), late('bbb111', 'b')],
+          }
+        );
+        const commitsBySha = github.commitsBySha as sinon.SinonStub;
+        const manifest = new Manifest(
+          github,
+          'main',
+          {
+            a: {releaseType: 'simple', component: 'a'},
+            b: {releaseType: 'simple', component: 'b'},
+          },
+          {a: Version.parse('1.0.0'), b: Version.parse('1.0.0')}
+        );
+        await manifest.buildPullRequests();
+        expect(commitsBySha.firstCall.args[0]).to.eql(['bbb222', 'bbb111']);
+      });
+
       it('stops walking once every unreleased commit is collected', async () => {
         mockReleases(sandbox, github, [
           {

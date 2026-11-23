@@ -676,7 +676,12 @@ export class Manifest {
         unreleasedByRelease = canCompare
           ? await this.compareReleases(releaseShas, commit.sha)
           : undefined;
-        for (const shas of unreleasedByRelease?.values() ?? []) {
+        // Longest first: an older release's comparison holds a newer one's,
+        // so its chronological order leads, and each SHA lands once.
+        const comparisons = [...(unreleasedByRelease?.values() ?? [])].sort(
+          (a, b) => b.length - a.length
+        );
+        for (const shas of comparisons) {
           shas.forEach(sha => unwalked.add(sha));
         }
       }
@@ -742,6 +747,14 @@ export class Manifest {
         backfillFiles: true,
         batchSize: this.commitBatchSize,
       });
+      // A release built without them gets the wrong version and notes, and
+      // a tag cannot be taken back, so fail instead.
+      late.forEach(commit => unwalked.delete(commit.sha));
+      if (unwalked.size > 0) {
+        throw new Error(
+          `Could not fetch unreleased commits: ${[...unwalked].join(', ')}`
+        );
+      }
       for (const commit of late) {
         commits.push({
           sha: commit.sha,
