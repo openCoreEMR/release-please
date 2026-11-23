@@ -115,6 +115,16 @@ export interface Scm {
     targetBranch: string,
     options?: ScmCommitIteratorOptions
   ): AsyncGenerator<Commit, void, void>;
+  // Optional: without them, releases are judged from the commit walk alone.
+  commitShasBetween?(
+    baseSha: string,
+    headSha: string,
+    maxResults: number
+  ): Promise<string[] | undefined>;
+  commitsBySha?(
+    shas: string[],
+    options?: ScmCommitIteratorOptions
+  ): Promise<Commit[]>;
   pullRequestIterator(
     targetBranch: string,
     status?: 'OPEN' | 'CLOSED' | 'MERGED',
