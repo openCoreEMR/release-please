@@ -1791,6 +1791,171 @@ describe('Manifest', () => {
       });
     });
 
+    describe('with a long-lived branch that merged main and the search depth cuts the walk short', () => {
+      // The shape of openCoreEMR/release-please#15: the branch's first
+      // commits predate the release by days, a merge of main into the
+      // branch follows the release, and walking back to the branch point
+      // takes more commits than the search depth allows.
+      const release = {
+        headBranchName: 'release-please/branches/main',
+        baseBranchName: 'main',
+        number: 123,
+        title: 'chore: release 1.0.0',
+        body: '',
+        labels: [],
+        files: [],
+        sha: 'abc123',
+      };
+      const commits = [
+        {
+          sha: 'mmm222',
+          message: 'Merge pull request #20 from owner/long-branch',
+          files: [],
+          parents: ['abc123', 'bbb222'],
+        },
+        {
+          sha: 'bbb222',
+          message: 'fix: late fix',
+          files: [],
+          parents: ['xxx111'],
+        },
+        {
+          sha: 'xxx111',
+          message: "Merge branch 'main' into long-branch",
+          files: [],
+          parents: ['bbb111', 'abc123'],
+        },
+        {
+          sha: 'abc123',
+          message: 'chore: release 1.0.0',
+          files: [],
+          parents: ['mmm111'],
+          pullRequest: release,
+        },
+        {
+          sha: 'mmm111',
+          message: 'fix: already released',
+          files: [],
+          parents: ['mmm000'],
+        },
+        {
+          // Its branch point, mmm000, is past the end of the walk, so the
+          // walk cannot tell whether the release holds it.
+          sha: 'bbb111',
+          message: 'feat: early feature',
+          files: [],
+          parents: ['bbb000'],
+        },
+      ];
+      const beyondDepth = {
+        sha: 'bbb000',
+        message: 'feat: first feature',
+        files: [],
+        parents: ['mmm000'],
+      };
+
+      it('includes every branch commit the release does not hold', async () => {
+        mockReleases(sandbox, github, [
+          {
+            id: 123456,
+            sha: 'abc123',
+            tagName: 'v1.0.0',
+            url: 'https://github.com/fake-owner/fake-repo/releases/tag/v1.0.0',
+          },
+        ]);
+        mockCommits(sandbox, github, commits, {
+          unreleasedByRelease: {
+            abc123: ['bbb000', 'bbb111', 'xxx111', 'bbb222', 'mmm222'],
+          },
+          bySha: [beyondDepth],
+        });
+        const manifest = new Manifest(
+          github,
+          'main',
+          {
+            '.': {
+              releaseType: 'simple',
+              skipGitHubMergeCommits: true,
+            },
+          },
+          {
+            '.': Version.parse('1.0.0'),
+          }
+        );
+        const pullRequests = await manifest.buildPullRequests();
+        expect(pullRequests).lengthOf(1);
+        expect(pullRequests[0].version?.toString()).to.eql('1.1.0');
+        const notes = pullRequests[0].body.toString();
+        expect(notes).to.include('first feature');
+        expect(notes).to.include('early feature');
+        expect(notes).to.include('late fix');
+        expect(notes).not.to.include('already released');
+      });
+
+      it('stops walking once every unreleased commit is collected', async () => {
+        mockReleases(sandbox, github, [
+          {
+            id: 123456,
+            sha: 'abc123',
+            tagName: 'v1.0.0',
+            url: 'https://github.com/fake-owner/fake-repo/releases/tag/v1.0.0',
+          },
+        ]);
+        // The walk stops at the first commit after the last unreleased one,
+        // so it never reads the commit after that.
+        let readPastStop = false;
+        const pastStop = {
+          get sha() {
+            readPastStop = true;
+            return 'zzz000';
+          },
+          message: 'fix: past the stop',
+          files: [],
+          parents: [],
+        };
+        mockCommits(
+          sandbox,
+          github,
+          [
+            ...commits,
+            {
+              sha: 'mmm000',
+              message: 'fix: long released',
+              files: [],
+              parents: [],
+            },
+            pastStop,
+          ],
+          {
+            unreleasedByRelease: {
+              abc123: ['bbb111', 'xxx111', 'bbb222', 'mmm222'],
+            },
+          }
+        );
+        const commitsBySha = github.commitsBySha as sinon.SinonStub;
+        const manifest = new Manifest(
+          github,
+          'main',
+          {
+            '.': {
+              releaseType: 'simple',
+              skipGitHubMergeCommits: true,
+            },
+          },
+          {
+            '.': Version.parse('1.0.0'),
+          }
+        );
+        const pullRequests = await manifest.buildPullRequests();
+        expect(pullRequests).lengthOf(1);
+        const notes = pullRequests[0].body.toString();
+        expect(notes).to.include('early feature');
+        expect(notes).not.to.include('long released');
+        expect(readPastStop).to.be.false;
+        expect(commitsBySha.called).to.be.false;
+      });
+    });
+
     describe('with history that ends before ancestry resolves', () => {
       beforeEach(() => {
         mockReleases(sandbox, github, [

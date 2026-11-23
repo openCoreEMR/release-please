@@ -654,14 +654,37 @@ export class Manifest {
     // History arrives in committer-date order, so reaching every release
     // commit does not mean every unreleased commit has been seen.
     const ancestry = new ReleaseAncestry(releaseShas);
+    // Release SHA => the commits it does not contain, compared from the head
+    // the walk starts at. Proving ancestry by walking can take far more
+    // commits than the search depth: a branch cut long before the last
+    // release keeps its old dates, and only reading back to its branch point
+    // shows that it is not in the release.
+    let unreleasedByRelease: Map<string, string[]> | undefined;
+    // Unreleased commits the walk has not reached yet.
+    const unwalked = new Set<string>();
+    const canCompare =
+      !needsBootstrap && !this.lastReleaseSha && releaseShas.size > 0;
 
     // sha => release pull request
     const releasePullRequestsBySha: Record<string, PullRequest> = {};
     let releaseCommitsFound = 0;
+    let isHead = true;
     for await (const commit of commitGenerator) {
-      // Judge before the visit: this commit is still in the frontier, so an
+      if (isHead) {
+        isHead = false;
+        unreleasedByRelease = canCompare
+          ? await this.compareReleases(releaseShas, commit.sha)
+          : undefined;
+        for (const shas of unreleasedByRelease?.values() ?? []) {
+          shas.forEach(sha => unwalked.add(sha));
+        }
+      }
+      // Judge before the visit: this commit is still unwalked, so an
       // unreleased commit keeps the walk going until it is collected.
-      const unreleasedRemain = !ancestry.isComplete();
+      const unreleasedRemain = unreleasedByRelease
+        ? unwalked.size > 0
+        : !ancestry.isComplete();
+      unwalked.delete(commit.sha);
       ancestry.visit(commit);
       if (releaseShas.has(commit.sha)) {
         if (commit.pullRequest) {
@@ -707,6 +730,29 @@ export class Manifest {
       );
     }
 
+    // Fetch the unreleased commits the search depth stopped the walk short
+    // of. They are older than every walked commit, so they go last, newest
+    // first.
+    if (unwalked.size > 0 && this.github.commitsBySha) {
+      this.logger.info(
+        `Fetching ${unwalked.size} unreleased commits beyond the search depth`
+      );
+      const late = await this.github.commitsBySha([...unwalked].reverse(), {
+        backfillFiles: true,
+        batchSize: this.commitBatchSize,
+      });
+      for (const commit of late) {
+        commits.push({
+          sha: commit.sha,
+          message: commit.message,
+          files: commit.files,
+          pullRequest: commit.pullRequest,
+          author: commit.author,
+          parents: commit.parents,
+        });
+      }
+    }
+
     // split commits by path
     this.logger.info(`Splitting ${commits.length} commits by path`);
     const cs = new CommitSplit({
@@ -715,16 +761,20 @@ export class Manifest {
     });
     const splitCommits = cs.split(commits);
 
-    // limit paths to ones since the last release. Filter by ancestry only
-    // when the walk resolved it; a walk that stopped early (configured last
-    // release, bootstrap, search depth) keeps the date-order cutoff.
+    // limit paths to ones since the last release. Without a comparison,
+    // filter by ancestry only when the walk resolved it; a walk that stopped
+    // early (configured last release, bootstrap, search depth) keeps the
+    // date-order cutoff.
     const ancestryResolved = ancestry.isComplete();
     let commitsPerPath: Record<string, Commit[]> = {};
     for (const path in this.repositoryConfig) {
       const pathCommits =
         path === ROOT_PROJECT_PATH ? commits : splitCommits[path] ?? [];
-      const unreleased = ancestryResolved
-        ? ancestry.notReleasedBy(pathCommits, releaseShasByPath[path])
+      const releaseSha = releaseShasByPath[path];
+      const unreleased = unreleasedByRelease
+        ? notReleasedPerComparison(pathCommits, unreleasedByRelease, releaseSha)
+        : ancestryResolved
+        ? ancestry.notReleasedBy(pathCommits, releaseSha)
         : undefined;
       commitsPerPath[path] =
         unreleased ?? commitsAfterSha(pathCommits, releaseShasByPath[path]);
@@ -944,6 +994,38 @@ export class Manifest {
       allTags[tag.name] = tag;
     }
     return allTags;
+  }
+
+  /**
+   * For each release, the SHAs of the commits reachable from `headSha` that
+   * it does not contain, or `undefined` when any comparison is unavailable.
+   */
+  private async compareReleases(
+    releaseShas: Set<string>,
+    headSha: string
+  ): Promise<Map<string, string[]> | undefined> {
+    if (!this.github.commitShasBetween || !this.github.commitsBySha) {
+      return undefined;
+    }
+    const unreleasedByRelease = new Map<string, string[]>();
+    for (const releaseSha of releaseShas) {
+      const shas = await this.github.commitShasBetween(
+        releaseSha,
+        headSha,
+        this.commitSearchDepth
+      );
+      if (!shas) {
+        this.logger.warn(
+          `Could not compare ${releaseSha}...${headSha}, judging releases from the commit walk`
+        );
+        return undefined;
+      }
+      this.logger.info(
+        `Found ${shas.length} commits since release ${releaseSha}`
+      );
+      unreleasedByRelease.set(releaseSha, shas);
+    }
+    return unreleasedByRelease;
   }
 
   /**
@@ -1860,6 +1942,25 @@ function hasAllLabels(expected: string[], existing: string[]): boolean {
     }
   }
   return true;
+}
+
+/**
+ * The commits the release at `releaseSha` does not contain, per the
+ * comparison. With no release, every commit is unreleased.
+ */
+function notReleasedPerComparison(
+  commits: Commit[],
+  unreleasedByRelease: Map<string, string[]>,
+  releaseSha: string | undefined
+): Commit[] {
+  const unreleased = releaseSha
+    ? unreleasedByRelease.get(releaseSha)
+    : undefined;
+  if (!unreleased) {
+    return commits;
+  }
+  const shas = new Set(unreleased);
+  return commits.filter(commit => shas.has(commit.sha));
 }
 
 function commitsAfterSha(commits: Commit[], lastReleaseSha: string) {
