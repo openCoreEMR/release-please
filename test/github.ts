@@ -711,6 +711,49 @@ describe('GitHub', () => {
       req.done();
     });
 
+    it("backfills files rather than trust a pull request's", async () => {
+      // Fetched alone, the last commit of a rebase-merged pull request looks
+      // like the pull request's only commit.
+      req
+        .post('/graphql')
+        .reply(200, {
+          data: {
+            repository: {
+              c0: {
+                associatedPullRequests: {
+                  nodes: [
+                    {
+                      number: 7,
+                      title: 'fix: two commits',
+                      body: '',
+                      baseRefName: 'main',
+                      headRefName: 'two-commits',
+                      labels: {nodes: []},
+                      mergeCommit: {oid: 'bbb222'},
+                      files: {
+                        nodes: [{path: 'a'}, {path: 'b'}],
+                        pageInfo: {hasNextPage: false},
+                      },
+                    },
+                  ],
+                },
+                sha: 'bbb222',
+                message: 'fix: only b',
+                parents: {totalCount: 1, nodes: [{oid: 'aaa111'}]},
+              },
+            },
+          },
+        })
+        .get('/repos/fake/fake/commits/bbb222')
+        .reply(200, {files: [{filename: 'b'}]});
+      const [commit] = await github.commitsBySha(['bbb222'], {
+        backfillFiles: true,
+      });
+      expect(commit.files).to.eql(['b']);
+      expect(commit.pullRequest?.number).to.eql(7);
+      req.done();
+    });
+
     it('fetches in batches', async () => {
       req
         .post('/graphql')

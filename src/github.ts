@@ -357,11 +357,14 @@ export class GitHub implements Scm {
     };
   }
 
-  // Convert one page of GraphQL commits, matching each to its pull request
-  // and filling in its files.
+  // Convert GraphQL commits, matching each to its pull request and filling in
+  // its files. A page of history holds every commit a rebase merge landed,
+  // so the count below can tell a single-commit pull request; commits
+  // fetched by SHA (`fromHistory` false) cannot, so they always backfill.
   private async toCommits(
     commits: GraphQLCommit[],
-    options: CommitIteratorOptions
+    options: CommitIteratorOptions,
+    fromHistory = true
   ): Promise<Commit[]> {
     // Count the number of pull requests associated with each merge commit. This is
     // used in the next step to make sure we only find pull requests with a
@@ -419,7 +422,7 @@ export class GitHub implements Scm {
           files: (pullRequest.files?.nodes || []).map(node => node.path),
         };
       }
-      if (mergePullRequest) {
+      if (mergePullRequest && fromHistory) {
         if (
           mergePullRequest.files?.pageInfo?.hasNextPage &&
           options.backfillFiles
@@ -541,7 +544,7 @@ export class GitHub implements Scm {
       const found = batch
         .map((_sha, j) => response?.repository?.[`c${j}`])
         .filter(Boolean) as GraphQLCommit[];
-      commits.push(...(await this.toCommits(found, options)));
+      commits.push(...(await this.toCommits(found, options, false)));
     }
     return commits;
   }

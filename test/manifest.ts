@@ -1892,6 +1892,46 @@ describe('Manifest', () => {
         expect(notes).not.to.include('already released');
       });
 
+      it('judges from the walk when the comparison fails', async () => {
+        mockReleases(sandbox, github, [
+          {
+            id: 123456,
+            sha: 'abc123',
+            tagName: 'v1.0.0',
+            url: 'https://github.com/fake-owner/fake-repo/releases/tag/v1.0.0',
+          },
+        ]);
+        mockCommits(sandbox, github, commits);
+        (github.commitShasBetween as sinon.SinonStub).rejects(
+          new GitHubAPIError(
+            new RequestError('Service Unavailable', 503, {
+              response: {headers: {}, status: 503, url: '', data: ''},
+              request: {headers: {}, method: 'GET', url: ''},
+            })
+          )
+        );
+        const manifest = new Manifest(
+          github,
+          'main',
+          {
+            '.': {
+              releaseType: 'simple',
+              skipGitHubMergeCommits: true,
+            },
+          },
+          {
+            '.': Version.parse('1.0.0'),
+          }
+        );
+        const pullRequests = await manifest.buildPullRequests();
+        expect(pullRequests).lengthOf(1);
+        // The walk ends before ancestry resolves, so the date-order cutoff
+        // applies, as it did before the comparison existed.
+        const notes = pullRequests[0].body.toString();
+        expect(notes).to.include('late fix');
+        expect(notes).not.to.include('early feature');
+      });
+
       it('stops walking once every unreleased commit is collected', async () => {
         mockReleases(sandbox, github, [
           {

@@ -39,6 +39,7 @@ import {
   DuplicateReleaseError,
   FileNotFoundError,
   ConfigurationError,
+  GitHubAPIError,
 } from './errors';
 import {ManifestPlugin} from './plugin';
 import {
@@ -1009,11 +1010,19 @@ export class Manifest {
     }
     const unreleasedByRelease = new Map<string, string[]>();
     for (const releaseSha of releaseShas) {
-      const shas = await this.github.commitShasBetween(
-        releaseSha,
-        headSha,
-        this.commitSearchDepth
-      );
+      let shas: string[] | undefined;
+      try {
+        shas = await this.github.commitShasBetween(
+          releaseSha,
+          headSha,
+          this.commitSearchDepth
+        );
+      } catch (e) {
+        if (!(e instanceof GitHubAPIError)) {
+          throw e;
+        }
+        this.logger.warn(`Compare failed: ${e.message}`);
+      }
       if (!shas) {
         this.logger.warn(
           `Could not compare ${releaseSha}...${headSha}, judging releases from the commit walk`
