@@ -641,6 +641,140 @@ describe('GitHub', () => {
     });
   });
 
+  describe('commitShasBetween', () => {
+    const compare = '/repos/fake/fake/compare/abc123...def456';
+    const page = (start: number, count: number, totalCommits: number) => ({
+      total_commits: totalCommits,
+      commits: [...Array(count).keys()].map(i => ({sha: `c${start + i}`})),
+    });
+
+    it('lists the commits on every page', async () => {
+      req
+        .get(`${compare}?per_page=100&page=1`)
+        .reply(200, page(0, 100, 101))
+        .get(`${compare}?per_page=100&page=2`)
+        .reply(200, page(100, 1, 101));
+      const shas = await github.commitShasBetween('abc123', 'def456', 500);
+      expect(shas).lengthOf(101);
+      expect(shas?.[0]).to.eql('c0');
+      expect(shas?.[100]).to.eql('c100');
+      req.done();
+    });
+
+    it('gives up when there are more commits than asked for', async () => {
+      req.get(`${compare}?per_page=100&page=1`).reply(200, page(0, 100, 501));
+      const shas = await github.commitShasBetween('abc123', 'def456', 500);
+      expect(shas).to.be.undefined;
+      req.done();
+    });
+
+    it('gives up when the pages end before every commit is listed', async () => {
+      req.get(`${compare}?per_page=100&page=1`).reply(200, page(0, 3, 4));
+      const shas = await github.commitShasBetween('abc123', 'def456', 500);
+      expect(shas).to.be.undefined;
+      req.done();
+    });
+  });
+
+  describe('commitsBySha', () => {
+    it('returns the commits found newest first by committer date', async () => {
+      const node = (sha: string, committedDate: string) => ({
+        associatedPullRequests: {nodes: []},
+        sha,
+        message: `fix: ${sha}`,
+        committedDate,
+        parents: {totalCount: 1, nodes: [{oid: 'p0'}]},
+      });
+      req
+        .post('/graphql', body => {
+          expect(body.variables.sha0).to.eql('aaa111');
+          expect(body.variables.sha1).to.eql('missing');
+          return true;
+        })
+        .reply(200, {
+          data: {
+            repository: {c0: node('aaa111', '2026-01-01T00:00:00Z'), c1: null},
+          },
+        })
+        .post('/graphql', body => {
+          expect(body.variables.sha0).to.eql('bbb222');
+          return true;
+        })
+        .reply(200, {
+          data: {repository: {c0: node('bbb222', '2026-02-01T00:00:00Z')}},
+        })
+        .get('/repos/fake/fake/commits/bbb222')
+        .reply(200, {files: [{filename: 'b'}]})
+        .get('/repos/fake/fake/commits/aaa111')
+        .reply(200, {files: [{filename: 'a'}]});
+      const commits = await github.commitsBySha(
+        ['aaa111', 'missing', 'bbb222'],
+        {backfillFiles: true, batchSize: 2}
+      );
+      expect(commits.map(c => [c.sha, c.parents, c.files])).to.eql([
+        ['bbb222', ['p0'], ['b']],
+        ['aaa111', ['p0'], ['a']],
+      ]);
+      req.done();
+    });
+
+    it("backfills files rather than trust a pull request's", async () => {
+      // Fetched alone, the last commit of a rebase-merged pull request looks
+      // like the pull request's only commit.
+      req
+        .post('/graphql')
+        .reply(200, {
+          data: {
+            repository: {
+              c0: {
+                associatedPullRequests: {
+                  nodes: [
+                    {
+                      number: 7,
+                      title: 'fix: two commits',
+                      body: '',
+                      baseRefName: 'main',
+                      headRefName: 'two-commits',
+                      labels: {nodes: []},
+                      mergeCommit: {oid: 'bbb222'},
+                      files: {
+                        nodes: [{path: 'a'}, {path: 'b'}],
+                        pageInfo: {hasNextPage: false},
+                      },
+                    },
+                  ],
+                },
+                sha: 'bbb222',
+                message: 'fix: only b',
+                parents: {totalCount: 1, nodes: [{oid: 'aaa111'}]},
+              },
+            },
+          },
+        })
+        .get('/repos/fake/fake/commits/bbb222')
+        .reply(200, {files: [{filename: 'b'}]});
+      const [commit] = await github.commitsBySha(['bbb222'], {
+        backfillFiles: true,
+      });
+      expect(commit.files).to.eql(['b']);
+      expect(commit.pullRequest?.number).to.eql(7);
+      req.done();
+    });
+
+    it('fetches in batches', async () => {
+      req
+        .post('/graphql')
+        .reply(200, {data: {repository: {c0: null, c1: null}}})
+        .post('/graphql')
+        .reply(200, {data: {repository: {c0: null}}});
+      const commits = await github.commitsBySha(['a', 'b', 'c'], {
+        batchSize: 2,
+      });
+      expect(commits).to.eql([]);
+      req.done();
+    });
+  });
+
   describe('getCommitFiles', () => {
     it('fetches the list of files', async () => {
       req

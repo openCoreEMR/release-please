@@ -73,6 +73,53 @@ export interface GitHubOptions {
 
 type CommitFilter = (commit: Commit) => boolean;
 
+// The commit fields every commit query selects, so that commits read from
+// history and commits fetched by SHA convert the same way.
+const COMMIT_FIELDS = `fragment CommitFields on Commit {
+  associatedPullRequests(first: 10) {
+    nodes {
+      number
+      title
+      baseRefName
+      headRefName
+      labels(first: 10) {
+        nodes {
+          name
+        }
+      }
+      body
+      mergeCommit {
+        oid
+      }
+      files(first: $maxFilesChanged) {
+        nodes {
+          path
+        }
+        pageInfo {
+          endCursor
+          hasNextPage
+        }
+      }
+    }
+  }
+  sha: oid
+  message
+  committedDate
+  parents(first: 10) {
+    totalCount
+    nodes {
+      oid
+    }
+  }
+  author {
+    name
+    email
+    user {
+      login
+    }
+  }
+}`;
+
 interface GraphQLCommitAuthor {
   name?: string;
   email?: string;
@@ -84,6 +131,7 @@ interface GraphQLCommitAuthor {
 interface GraphQLCommit {
   sha: string;
   message: string;
+  committedDate?: string;
   author?: GraphQLCommitAuthor;
   parents?: {
     totalCount: number;
@@ -259,47 +307,7 @@ export class GitHub implements Scm {
             ... on Commit {
               history(first: $num, after: $cursor) {
                 nodes {
-                  associatedPullRequests(first: 10) {
-                    nodes {
-                      number
-                      title
-                      baseRefName
-                      headRefName
-                      labels(first: 10) {
-                        nodes {
-                          name
-                        }
-                      }
-                      body
-                      mergeCommit {
-                        oid
-                      }
-                      files(first: $maxFilesChanged) {
-                        nodes {
-                          path
-                        }
-                        pageInfo {
-                          endCursor
-                          hasNextPage
-                        }
-                      }
-                    }
-                  }
-                  sha: oid
-                  message
-                  parents(first: 10) {
-                    totalCount
-                    nodes {
-                      oid
-                    }
-                  }
-                  author {
-                    name
-                    email
-                    user {
-                      login
-                    }
-                  }
+                  ...CommitFields
                 }
                 pageInfo {
                   hasNextPage
@@ -310,7 +318,8 @@ export class GitHub implements Scm {
           }
         }
       }
-    }`;
+    }
+    ${COMMIT_FIELDS}`;
     const params = {
       cursor,
       owner: this.repository.owner,
@@ -340,7 +349,25 @@ export class GitHub implements Scm {
       return null;
     }
     const history = response.repository.ref.target.history;
-    const commits = (history.nodes || []) as GraphQLCommit[];
+    const commitData = await this.toCommits(
+      (history.nodes || []) as GraphQLCommit[],
+      options
+    );
+    return {
+      pageInfo: history.pageInfo,
+      data: commitData,
+    };
+  }
+
+  // Convert GraphQL commits, matching each to its pull request and filling in
+  // its files. A page of history holds every commit a rebase merge landed,
+  // so the count below can tell a single-commit pull request; commits
+  // fetched by SHA (`fromHistory` false) cannot, so they always backfill.
+  private async toCommits(
+    commits: GraphQLCommit[],
+    options: CommitIteratorOptions,
+    fromHistory = true
+  ): Promise<Commit[]> {
     // Count the number of pull requests associated with each merge commit. This is
     // used in the next step to make sure we only find pull requests with a
     // merge commit that contain 1 merged commit.
@@ -397,7 +424,7 @@ export class GitHub implements Scm {
           files: (pullRequest.files?.nodes || []).map(node => node.path),
         };
       }
-      if (mergePullRequest) {
+      if (mergePullRequest && fromHistory) {
         if (
           mergePullRequest.files?.pageInfo?.hasNextPage &&
           options.backfillFiles
@@ -422,10 +449,112 @@ export class GitHub implements Scm {
       }
       commitData.push(commit);
     }
-    return {
-      pageInfo: history.pageInfo,
-      data: commitData,
-    };
+    return commitData;
+  }
+
+  /**
+   * The SHAs of the commits reachable from `headSha` but not from `baseSha`
+   * (`git log baseSha..headSha`), from the compare API.
+   *
+   * @param {string} baseSha The commit to exclude, with its ancestors
+   * @param {string} headSha The commit to start from
+   * @param {number} maxResults The most commits to list
+   * @returns {string[] | undefined} The SHAs, oldest first, or `undefined`
+   *   when there are more than `maxResults` or the comparison is incomplete
+   * @throws {GitHubAPIError} on an API error
+   */
+  commitShasBetween = wrapAsync(
+    async (
+      baseSha: string,
+      headSha: string,
+      maxResults: number
+    ): Promise<string[] | undefined> => {
+      this.logger.debug(`Comparing commits ${baseSha}...${headSha}`);
+      const shas: string[] = [];
+      const perPage = 100;
+      for (let page = 1; ; page++) {
+        const {data} = await this.octokit.request(
+          'GET /repos/{owner}/{repo}/compare/{basehead}',
+          {
+            owner: this.repository.owner,
+            repo: this.repository.repo,
+            basehead: `${baseSha}...${headSha}`,
+            per_page: perPage,
+            page,
+          }
+        );
+        if (data.total_commits > maxResults) {
+          this.logger.warn(
+            `${data.total_commits} commits since ${baseSha}, more than ${maxResults}`
+          );
+          return undefined;
+        }
+        shas.push(...data.commits.map(commit => commit.sha));
+        if (shas.length >= data.total_commits) {
+          return shas;
+        }
+        if (data.commits.length < perPage) {
+          this.logger.warn(
+            `Compare listed ${shas.length} of ${data.total_commits} commits since ${baseSha}`
+          );
+          return undefined;
+        }
+      }
+    }
+  );
+
+  /**
+   * Fetch commits by SHA, converted the same way as commits read from
+   * history.
+   *
+   * @param {string[]} shas The commits to fetch
+   * @param {CommitIteratorOptions} options Query options
+   * @param {boolean} options.backfillFiles If set, use the REST API for
+   *   fetching the list of touched files in each commit.
+   * @param {number} options.batchSize How many commits each query fetches
+   * @returns {Commit[]} The commits found, newest first by committer date,
+   *   the order history is read in
+   * @throws {GitHubAPIError} on an API error
+   */
+  async commitsBySha(
+    shas: string[],
+    options: CommitIteratorOptions = {}
+  ): Promise<Commit[]> {
+    const batchSize = options.batchSize ?? 10;
+    const found: GraphQLCommit[] = [];
+    for (let i = 0; i < shas.length; i += batchSize) {
+      const batch = shas.slice(i, i + batchSize);
+      this.logger.debug(`Fetching ${batch.length} commits by SHA`);
+      const variables = batch.map((_sha, j) => `$sha${j}: GitObjectID!`);
+      const aliases = batch.map(
+        (_sha, j) => `c${j}: object(oid: $sha${j}) { ...CommitFields }`
+      );
+      const query = `query commitsBySha($owner: String!, $repo: String!, $maxFilesChanged: Int, ${variables.join(
+        ', '
+      )}) {
+        repository(owner: $owner, name: $repo) {
+          ${aliases.join('\n')}
+        }
+      }
+      ${COMMIT_FIELDS}`;
+      const response = await this.graphqlRequest({
+        query,
+        owner: this.repository.owner,
+        repo: this.repository.repo,
+        maxFilesChanged: 100, // max is 100
+        ...Object.fromEntries(batch.map((sha, j) => [`sha${j}`, sha])),
+      });
+      found.push(
+        ...(batch
+          .map((_sha, j) => response?.repository?.[`c${j}`])
+          .filter(Boolean) as GraphQLCommit[])
+      );
+    }
+    // GitHub returns UTC ISO 8601 timestamps, which sort as strings.
+    found.sort((a, b) =>
+      (b.committedDate ?? '').localeCompare(a.committedDate ?? '')
+    );
+    return this.toCommits(found, options, false);
   }
 
   /**

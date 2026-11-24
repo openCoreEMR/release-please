@@ -371,16 +371,38 @@ export function buildMockCandidatePullRequest(
   };
 }
 
+export interface MockComparison {
+  // Release SHA => the commits it does not contain, oldest first.
+  unreleasedByRelease: Record<string, string[]>;
+  // Commits `commitsBySha` can fetch beyond the walked history, newest first.
+  bySha?: Commit[];
+}
+
+/**
+ * Stub the commit walk with `commits`. Without `comparison`, every
+ * comparison is unavailable, so releases are judged from the walk alone.
+ */
 export function mockCommits(
   sandbox: sinon.SinonSandbox,
   github: GitHub,
-  commits: Commit[]
+  commits: Commit[],
+  comparison?: MockComparison
 ): sinon.SinonStub {
   async function* fakeGenerator() {
     for (const commit of commits) {
       yield commit;
     }
   }
+  sandbox
+    .stub(github, 'commitShasBetween')
+    .callsFake(async (baseSha: string) =>
+      comparison?.unreleasedByRelease[baseSha]?.slice()
+    );
+  sandbox
+    .stub(github, 'commitsBySha')
+    .callsFake(async (shas: string[]) =>
+      (comparison?.bySha ?? []).filter(c => shas.includes(c.sha))
+    );
   return sandbox.stub(github, 'mergeCommitIterator').returns(fakeGenerator());
 }
 
