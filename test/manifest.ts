@@ -1955,9 +1955,7 @@ describe('Manifest', () => {
         await assert.rejects(manifest.buildPullRequests(), /bbb000/);
       });
 
-      it('fetches late commits newest first across releases', async () => {
-        // The newer release is found first, but the older release's
-        // comparison holds it and sets the order.
+      it("fetches late commits from every release's comparison", async () => {
         mockReleases(sandbox, github, [
           {
             id: 2,
@@ -2020,7 +2018,11 @@ describe('Manifest', () => {
           {a: Version.parse('1.0.0'), b: Version.parse('1.0.0')}
         );
         await manifest.buildPullRequests();
-        expect(commitsBySha.firstCall.args[0]).to.eql(['bbb222', 'bbb111']);
+        // `commitsBySha` orders what it returns, so the request order is free.
+        expect([...commitsBySha.firstCall.args[0]].sort()).to.eql([
+          'bbb111',
+          'bbb222',
+        ]);
       });
 
       it('stops walking once every unreleased commit is collected', async () => {

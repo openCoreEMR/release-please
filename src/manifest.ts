@@ -676,12 +676,7 @@ export class Manifest {
         unreleasedByRelease = canCompare
           ? await this.compareReleases(releaseShas, commit.sha)
           : undefined;
-        // Longest first: an older release's comparison holds a newer one's,
-        // so its chronological order leads, and each SHA lands once.
-        const comparisons = [...(unreleasedByRelease?.values() ?? [])].sort(
-          (a, b) => b.length - a.length
-        );
-        for (const shas of comparisons) {
+        for (const shas of unreleasedByRelease?.values() ?? []) {
           shas.forEach(sha => unwalked.add(sha));
         }
       }
@@ -738,12 +733,12 @@ export class Manifest {
 
     // Fetch the unreleased commits the search depth stopped the walk short
     // of. They are older than every walked commit, so they go last, newest
-    // first.
+    // first as fetched.
     if (unwalked.size > 0 && this.github.commitsBySha) {
       this.logger.info(
         `Fetching ${unwalked.size} unreleased commits beyond the search depth`
       );
-      const late = await this.github.commitsBySha([...unwalked].reverse(), {
+      const late = await this.github.commitsBySha([...unwalked], {
         backfillFiles: true,
         batchSize: this.commitBatchSize,
       });

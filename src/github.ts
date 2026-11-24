@@ -104,6 +104,7 @@ const COMMIT_FIELDS = `fragment CommitFields on Commit {
   }
   sha: oid
   message
+  committedDate
   parents(first: 10) {
     totalCount
     nodes {
@@ -130,6 +131,7 @@ interface GraphQLCommitAuthor {
 interface GraphQLCommit {
   sha: string;
   message: string;
+  committedDate?: string;
   author?: GraphQLCommitAuthor;
   parents?: {
     totalCount: number;
@@ -510,7 +512,8 @@ export class GitHub implements Scm {
    * @param {boolean} options.backfillFiles If set, use the REST API for
    *   fetching the list of touched files in each commit.
    * @param {number} options.batchSize How many commits each query fetches
-   * @returns {Commit[]} The commits found, in the order of `shas`
+   * @returns {Commit[]} The commits found, newest first by committer date,
+   *   the order history is read in
    * @throws {GitHubAPIError} on an API error
    */
   async commitsBySha(
@@ -518,7 +521,7 @@ export class GitHub implements Scm {
     options: CommitIteratorOptions = {}
   ): Promise<Commit[]> {
     const batchSize = options.batchSize ?? 10;
-    const commits: Commit[] = [];
+    const found: GraphQLCommit[] = [];
     for (let i = 0; i < shas.length; i += batchSize) {
       const batch = shas.slice(i, i + batchSize);
       this.logger.debug(`Fetching ${batch.length} commits by SHA`);
@@ -541,12 +544,17 @@ export class GitHub implements Scm {
         maxFilesChanged: 100, // max is 100
         ...Object.fromEntries(batch.map((sha, j) => [`sha${j}`, sha])),
       });
-      const found = batch
-        .map((_sha, j) => response?.repository?.[`c${j}`])
-        .filter(Boolean) as GraphQLCommit[];
-      commits.push(...(await this.toCommits(found, options, false)));
+      found.push(
+        ...(batch
+          .map((_sha, j) => response?.repository?.[`c${j}`])
+          .filter(Boolean) as GraphQLCommit[])
+      );
     }
-    return commits;
+    // GitHub returns UTC ISO 8601 timestamps, which sort as strings.
+    found.sort((a, b) =>
+      (b.committedDate ?? '').localeCompare(a.committedDate ?? '')
+    );
+    return this.toCommits(found, options, false);
   }
 
   /**

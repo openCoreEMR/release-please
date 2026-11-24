@@ -374,7 +374,7 @@ export function buildMockCandidatePullRequest(
 export interface MockComparison {
   // Release SHA => the commits it does not contain, oldest first.
   unreleasedByRelease: Record<string, string[]>;
-  // Commits `commitsBySha` can fetch beyond the walked history.
+  // Commits `commitsBySha` can fetch beyond the walked history, newest first.
   bySha?: Commit[];
 }
 
@@ -401,7 +401,7 @@ export function mockCommits(
   sandbox
     .stub(github, 'commitsBySha')
     .callsFake(async (shas: string[]) =>
-      shas.flatMap(sha => comparison?.bySha?.filter(c => c.sha === sha) ?? [])
+      (comparison?.bySha ?? []).filter(c => shas.includes(c.sha))
     );
   return sandbox.stub(github, 'mergeCommitIterator').returns(fakeGenerator());
 }

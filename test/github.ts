@@ -677,32 +677,39 @@ describe('GitHub', () => {
   });
 
   describe('commitsBySha', () => {
-    it('fetches each commit in the order asked for', async () => {
-      const node = (sha: string) => ({
+    it('returns the commits found newest first by committer date', async () => {
+      const node = (sha: string, committedDate: string) => ({
         associatedPullRequests: {nodes: []},
         sha,
         message: `fix: ${sha}`,
+        committedDate,
         parents: {totalCount: 1, nodes: [{oid: 'p0'}]},
       });
       req
         .post('/graphql', body => {
-          expect(body.variables.sha0).to.eql('bbb222');
+          expect(body.variables.sha0).to.eql('aaa111');
           expect(body.variables.sha1).to.eql('missing');
-          expect(body.variables.sha2).to.eql('aaa111');
           return true;
         })
         .reply(200, {
           data: {
-            repository: {c0: node('bbb222'), c1: null, c2: node('aaa111')},
+            repository: {c0: node('aaa111', '2026-01-01T00:00:00Z'), c1: null},
           },
+        })
+        .post('/graphql', body => {
+          expect(body.variables.sha0).to.eql('bbb222');
+          return true;
+        })
+        .reply(200, {
+          data: {repository: {c0: node('bbb222', '2026-02-01T00:00:00Z')}},
         })
         .get('/repos/fake/fake/commits/bbb222')
         .reply(200, {files: [{filename: 'b'}]})
         .get('/repos/fake/fake/commits/aaa111')
         .reply(200, {files: [{filename: 'a'}]});
       const commits = await github.commitsBySha(
-        ['bbb222', 'missing', 'aaa111'],
-        {backfillFiles: true}
+        ['aaa111', 'missing', 'bbb222'],
+        {backfillFiles: true, batchSize: 2}
       );
       expect(commits.map(c => [c.sha, c.parents, c.files])).to.eql([
         ['bbb222', ['p0'], ['b']],
